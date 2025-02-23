@@ -20,6 +20,7 @@ async fn main() {
     app.insert_resource(ClientConnection::default());
     app.insert_resource(ApplicationCtx::default());
     app.add_systems(Update, systems::frame);
+    app.add_systems(Update, systems::check_for_collision);
     app.add_systems(Update, systems::ui_system);
 
     app.run();

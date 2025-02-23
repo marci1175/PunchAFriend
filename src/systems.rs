@@ -5,7 +5,7 @@ use bevy::{
     ecs::{
         entity::Entity, event::EventReader, identifier::Identifier, query::With, system::{Commands, Query, Res, ResMut}, world::Mut
     },
-    input::{keyboard::KeyCode, ButtonInput},
+    input::{keyboard::KeyCode, mouse::{MouseButton, MouseButtonInput}, ButtonInput},
     math::{curve::cores::even_interp, primitives::Circle, vec2},
     render::mesh::{Mesh, Mesh2d},
     sprite::{ColorMaterial, MeshMaterial2d},
@@ -16,7 +16,7 @@ use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
     EguiContexts,
 };
-use bevy_rapier2d::{prelude::{AdditionalMassProperties, Collider, ColliderMassProperties, ExternalForce, ExternalImpulse, KinematicCharacterController, MassProperties, Restitution, RigidBody, Velocity}, rapier::prelude::{CollisionEvent, ContactForceEvent}};
+use bevy_rapier2d::{plugin::ReadRapierContext, prelude::{ActiveEvents, AdditionalMassProperties, Collider, ColliderMassProperties, ExternalForce, ExternalImpulse, KinematicCharacterController, MassProperties, Restitution, RigidBody, Velocity}, rapier::prelude::{CollisionEvent, ContactForceEvent}};
 use punchafriend::{ApplicationCtx, MapElement, SelfCharacter, UiState};
 
 pub fn setup(
@@ -30,6 +30,7 @@ pub fn setup(
     commands
         .spawn(Collider::cuboid(500.0, 10.0))
         .insert(Transform::from_xyz(0.0, -200.0, 0.0))
+        .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(MapElement);
 
     /* Create the bouncing ball. */
@@ -39,7 +40,8 @@ pub fn setup(
         .insert(Transform::from_xyz(0., 100., 0.))
         .insert(AdditionalMassProperties::Mass(0.1))
         .insert(KinematicCharacterController::default())
-        .insert(SelfCharacter);
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(SelfCharacter::default());
 }
 
 pub fn frame(
@@ -47,8 +49,9 @@ pub fn frame(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(Entity, &mut KinematicCharacterController), With<SelfCharacter>>,
+    mut query: Query<(Entity, &mut SelfCharacter, &mut KinematicCharacterController)>,
     mut app_ctx: ResMut<ApplicationCtx>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
 ) {
     let keyboard_input = keyboard_input.clone();
 
@@ -64,22 +67,39 @@ pub fn frame(
     if app_ctx.ui_state != UiState::Game {
         return;
     }
-
-    if let Ok(entity) = query.get_single_mut() {
-        handle_player_movement(entity, commands, keyboard_input);
+    
+    if let Ok(query) = query.get_single_mut() {
+        handle_player_movement(query, commands, keyboard_input, mouse_input);
     }
 }
 
 pub fn check_for_collision(
+    mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    self_character_query: Query<Entity, With<SelfCharacter>>,
+    mut self_character_query: Query<&mut SelfCharacter>,
 ) {
     for collision in collision_events.read() {
         match collision {
             bevy_rapier2d::prelude::CollisionEvent::Started(entity, entity2, collision_event_flags) => {
-                map_element_query.get(*entity);
-                self_character_query.get(*entity2);
+                let entity1_p = self_character_query.get(*entity).is_ok();
+                let entity1_m = map_element_query.get(*entity).is_ok();
+                let entity2_p = self_character_query.get(*entity2).is_ok();
+                let entity2_m = map_element_query.get(*entity2).is_ok();
+
+                // Check if entity1 is the player and entity2 is the map element
+                if entity1_p && entity2_m {
+                    let mut self_character_ref = self_character_query.get_mut(*entity).unwrap();
+                
+                    self_character_ref.can_jump = true;
+                }
+
+                // Check if entity2 is the player and entity1 is the map element
+                if entity1_m && entity2_p {
+                    let mut self_character_ref = self_character_query.get_mut(*entity2).unwrap();
+
+                    self_character_ref.can_jump = true;
+                }
             },
             bevy_rapier2d::prelude::CollisionEvent::Stopped(entity, entity1, collision_event_flags) => {
 
@@ -89,11 +109,12 @@ pub fn check_for_collision(
 }
 
 fn handle_player_movement(
-    query: (Entity, Mut<KinematicCharacterController>),
+    query: (Entity, Mut<SelfCharacter>, Mut<KinematicCharacterController>),
     mut commands: Commands,
     keyboard_input: ButtonInput<KeyCode>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
 ) {
-    let (entity, mut controller) = query;
+    let (entity, mut self_character, mut controller) = query;
 
     if keyboard_input.pressed(KeyCode::KeyA) {
         controller.translation = Some(vec2(-1.5, 0.));
@@ -103,11 +124,13 @@ fn handle_player_movement(
         controller.translation = Some(vec2(1.5, 0.));
     }
 
-    if keyboard_input.just_pressed(KeyCode::Space) {
+    if keyboard_input.just_pressed(KeyCode::Space) && self_character.can_jump {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., 500.),
             angvel: 0.5,
         });
+
+        self_character.can_jump = false;
     }
 
     if keyboard_input.just_pressed(KeyCode::KeyS) {
@@ -115,6 +138,10 @@ fn handle_player_movement(
             linvel: vec2(0., -500.),
             angvel: 0.5,
         });
+    }
+
+    if mouse_input.just_pressed(MouseButton::Left) {
+        //Attack
     }
 }
 

@@ -5,7 +5,15 @@ use bevy::{
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 #[derive(Component, Clone)]
-pub struct SelfCharacter;
+pub struct SelfCharacter {
+    pub can_jump: bool,
+}
+
+impl Default for SelfCharacter {
+    fn default() -> Self {
+        Self { can_jump: true }
+    }
+}
 
 #[derive(Component, Clone)]
 pub struct MapElement;
