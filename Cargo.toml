@@ -10,6 +10,7 @@ bevy_egui = {version = "0.33.0", features = ["serde"]}
 bevy_rapier2d = {version = "0.29.0", features = ["parallel", "serde-serialize", "simd-stable", "debug-render-2d"]}
 tokio = {version = "1.43.0", features = ["full"]}
 mlua = {version = "0.10.3", features = ["luajit", "vendored", "send"]}
+rand = {version = "0.9.0", features = ["serde"]}
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

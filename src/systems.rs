@@ -1,23 +1,18 @@
 use bevy::{
     asset::Assets,
-    color::Color,
     core_pipeline::core_2d::Camera2d,
     ecs::{
         entity::Entity,
         event::EventReader,
-        identifier::Identifier,
         query::With,
         system::{Commands, Query, Res, ResMut},
         world::Mut,
     },
-    input::{
-        keyboard::KeyCode,
-        mouse::{MouseButton, MouseButtonInput},
-        ButtonInput,
-    },
-    math::{curve::cores::even_interp, primitives::Circle, vec2},
-    render::mesh::{Mesh, Mesh2d},
-    sprite::{ColorMaterial, MeshMaterial2d},
+    input::{keyboard::KeyCode, ButtonInput},
+    math::vec2,
+    render::mesh::Mesh,
+    sprite::ColorMaterial,
+    time::Time,
     transform::components::Transform,
 };
 
@@ -25,18 +20,21 @@ use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
     EguiContexts,
 };
-use bevy_rapier2d::
-    prelude::{
-        ActiveEvents, AdditionalMassProperties, Ccd, CharacterAutostep, Collider, ColliderMassProperties, CollisionGroups, ExternalForce, ExternalImpulse, Group, KinematicCharacterController, LockedAxes, MassProperties, Restitution, RigidBody, Velocity
-    };
-use punchafriend::{
-    ApplicationCtx, AttackObject, CollisionGroupSet, ForeignCharacter, MapElement, SelfCharacter, UiState
+use bevy_rapier2d::prelude::{
+    ActiveEvents, AdditionalMassProperties, Ccd, Collider, ExternalImpulse, Group,
+    KinematicCharacterController, LockedAxes, Restitution, RigidBody, Velocity,
 };
+use punchafriend::{
+    ApplicationCtx, AttackObject, AttackType, CollisionGroupSet, Direction, ForeignCharacter,
+    MapElement, SelfCharacter, UiState,
+};
+use rand::Rng;
+use tokio::time::error::Elapsed;
 
 pub fn setup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
 ) {
     // Setup graphics
@@ -75,6 +73,7 @@ pub fn setup(
         .insert(LockedAxes::ROTATION_LOCKED)
         .insert(collision_groups.foreign_character)
         .insert(Ccd::enabled())
+        .insert(Velocity::default())
         .insert(ForeignCharacter::default());
 }
 
@@ -87,11 +86,11 @@ pub fn frame(
         Entity,
         &mut SelfCharacter,
         &mut KinematicCharacterController,
-        &mut Transform,
+        &Transform,
     )>,
     mut app_ctx: ResMut<ApplicationCtx>,
-    mouse_input: Res<ButtonInput<MouseButton>>,
     collision_groups: Res<CollisionGroupSet>,
+    time: Res<Time>,
 ) {
     let keyboard_input = keyboard_input.clone();
 
@@ -109,7 +108,14 @@ pub fn frame(
     }
 
     if let Ok(query) = query.get_single_mut() {
-        handle_player_movement(query, commands, keyboard_input, mouse_input, collision_groups);
+        handle_player_movement(
+            query,
+            commands,
+            keyboard_input,
+            collision_groups,
+            app_ctx,
+            time,
+        );
     }
 }
 
@@ -123,7 +129,7 @@ pub fn check_for_collision_with_map(
             bevy_rapier2d::prelude::CollisionEvent::Started(
                 entity,
                 entity2,
-                collision_event_flags,
+                _collision_event_flags,
             ) => {
                 let entity1_p = self_character_query.get(*entity).is_ok();
                 let entity1_m = map_element_query.get(*entity).is_ok();
@@ -134,14 +140,14 @@ pub fn check_for_collision_with_map(
                 if entity1_p && entity2_m {
                     let mut self_character_ref = self_character_query.get_mut(*entity).unwrap();
 
-                    self_character_ref.can_jump = true;
+                    self_character_ref.jumps_remaining = 2;
                 }
 
                 // Check if entity2 is the player and entity1 is the map element
                 if entity1_m && entity2_p {
                     let mut self_character_ref = self_character_query.get_mut(*entity2).unwrap();
 
-                    self_character_ref.can_jump = true;
+                    self_character_ref.jumps_remaining = 2;
                 }
             }
             bevy_rapier2d::prelude::CollisionEvent::Stopped(
@@ -158,30 +164,54 @@ fn handle_player_movement(
         Entity,
         Mut<SelfCharacter>,
         Mut<KinematicCharacterController>,
-        Mut<Transform>,
+        &Transform,
     ),
     mut commands: Commands,
     keyboard_input: ButtonInput<KeyCode>,
-    mouse_input: Res<ButtonInput<MouseButton>>,
     collision_groups: Res<CollisionGroupSet>,
+    mut app_ctx: ResMut<ApplicationCtx>,
+    time: Res<Time>,
 ) {
-    let (entity, mut self_character, mut controller, transfrom) = query;
+    //
+    let (entity, mut self_character, mut controller, transform) = query;
 
     if keyboard_input.pressed(KeyCode::KeyA) {
-        controller.translation = Some(vec2(-1.5, 0.));
+        // Move the local player to the left
+        controller.translation = Some(vec2(-450. * time.delta_secs(), 0.));
     }
 
     if keyboard_input.pressed(KeyCode::KeyD) {
-        controller.translation = Some(vec2(1.5, 0.));
+        // Move the local player to the right
+        controller.translation = Some(vec2(450. * time.delta_secs(), 0.));
     }
 
-    if keyboard_input.just_pressed(KeyCode::Space) && self_character.can_jump {
+    if keyboard_input.just_pressed(KeyCode::KeyD) {
+        // Update latest direction
+        self_character.direction = Direction::Right;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyA) {
+        // Update latest direction
+        self_character.direction = Direction::Left;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyW) {
+        // Update latest direction
+        self_character.direction = Direction::Up;
+    }
+
+    // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
+    // If there are no more jumps remaining the user needs to wait until they touch a MapObject again. This indicates they've landed.
+    // If the user is holding W the entitiy should automaticly jump once on the ground.
+    if keyboard_input.just_pressed(KeyCode::KeyW) && self_character.jumps_remaining != 0
+        || keyboard_input.pressed(KeyCode::KeyW) && self_character.jumps_remaining == 2
+    {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., 500.),
             angvel: 0.5,
         });
 
-        self_character.can_jump = false;
+        self_character.jumps_remaining -= 1;
     }
 
     if keyboard_input.just_pressed(KeyCode::KeyS) {
@@ -189,29 +219,58 @@ fn handle_player_movement(
             linvel: vec2(0., -500.),
             angvel: 0.5,
         });
+
+        // Update latest direction
+        self_character.direction = Direction::Down;
     }
 
-    if mouse_input.just_pressed(MouseButton::Left) {
+    // if the player is attacking
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        let (attack_collider_width, attack_collider_height) = (50., 50.);
+        let attack_collider = Collider::cuboid(attack_collider_width, attack_collider_height);
+
+        let attack_transform = match self_character.direction {
+            Direction::Left => Transform::from_xyz(
+                transform.translation.x - attack_collider_width,
+                transform.translation.y,
+                0.,
+            ),
+            Direction::Right => Transform::from_xyz(
+                transform.translation.x + attack_collider_width,
+                transform.translation.y,
+                0.,
+            ),
+            Direction::Up => Transform::from_xyz(
+                transform.translation.x,
+                transform.translation.y + attack_collider_height,
+                0.,
+            ),
+            Direction::Down => Transform::from_xyz(
+                transform.translation.x,
+                transform.translation.y - attack_collider_height,
+                0.,
+            ),
+        };
+
         // Spawn in a cuboid and then caluclate the collisions from that
         commands
-            .spawn(Collider::cuboid(100., 20.))
+            .spawn(attack_collider)
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(ActiveEvents::CONTACT_FORCE_EVENTS)
-            .insert(AttackObject)
-            .insert(Group::GROUP_3)
+            .insert(AttackObject::new(
+                punchafriend::AttackType::Directional(self_character.direction),
+                app_ctx.rand.random_range(14.0..21.0),
+                *transform,
+            ))
             .insert(collision_groups.attack_obj)
-            .insert(Transform::from_xyz(
-                transfrom.translation.x,
-                transfrom.translation.y,
-                transfrom.translation.z,
-            ));
+            .insert(attack_transform);
     }
 }
 
 pub fn check_for_collision_with_attack_object(
     mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
-    foreign_character_query: Query<(Entity, &mut ForeignCharacter)>,
+    foreign_character_query: Query<(Entity, &mut ForeignCharacter, &Transform, &Velocity)>,
     attack_object_query: Query<(Entity, &AttackObject)>,
 ) {
     for collision in collision_events.read() {
@@ -228,21 +287,54 @@ pub fn check_for_collision_with_attack_object(
                 let foreign_character_query_result =
                     foreign_character_query
                         .iter()
-                        .find(|(foreign_character_entity, _)| {
+                        .find(|(foreign_character_entity, _, _, _)| {
                             *foreign_character_entity == *entity
                                 || *foreign_character_entity == *entity1
                         });
 
-                match (attack_obj_query_result, foreign_character_query_result) {
-                    (Some((ent, attack_object)), Some((foreign_entity, mut foreign_character))) => {
-                        let mut colliding_entity_commands = commands.entity(foreign_entity);
+                if let (
+                    Some((_attack_ent, attack_object)),
+                    Some((
+                        foreign_entity,
+                        mut foreign_character,
+                        foreign_char_transform,
+                        foreign_char_velocity,
+                    )),
+                ) = (attack_obj_query_result, foreign_character_query_result)
+                {
+                    let mut colliding_entity_commands = commands.entity(foreign_entity);
 
-                        colliding_entity_commands.insert(ExternalImpulse {
-                            impulse: vec2(0., 500000.),
-                            torque_impulse: 1000000.,
+                    let attacker_origin_pos = attack_object.attack_origin.translation;
+                    let foreign_char_pos = foreign_char_transform.translation;
+
+                    // Decide the direction the enemy should go
+                    // If the attacker is closer to the platforms center it should push the enemy the opposite way.
+                    let push_left = if attacker_origin_pos.x > foreign_char_pos.x {
+                        -1.0
+                    } else {
+                        1.0
+                    };
+
+                    colliding_entity_commands
+                        .insert(Velocity {
+                            linvel: vec2(
+                                foreign_char_velocity.linvel.x + 180. * push_left,
+                                foreign_char_velocity.linvel.y
+                                    + if attack_object.attack_type
+                                        == AttackType::Directional(Direction::Up)
+                                    {
+                                        500.
+                                    } else if attack_object.attack_type
+                                        == AttackType::Directional(Direction::Down)
+                                    {
+                                        -500.
+                                    } else {
+                                        0.
+                                    },
+                            ),
+                            // Angles are disabled
+                            angvel: 0.,
                         });
-                    }
-                    _ => {}
                 };
             }
             bevy_rapier2d::prelude::CollisionEvent::Stopped(
@@ -254,7 +346,7 @@ pub fn check_for_collision_with_attack_object(
     }
 
     //Remove all the attacks objects after checking for collision
-    for (ent, _obj) in attack_object_query.iter() {
+    for (ent, _) in attack_object_query.iter() {
         commands.entity(ent).despawn();
     }
 }
@@ -266,7 +358,7 @@ pub fn ui_system(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
-) {    
+) {
     let ctx = contexts.ctx_mut();
 
     match app_ctx.ui_state {

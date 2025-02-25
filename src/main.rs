@@ -20,7 +20,7 @@ async fn main() {
     app.insert_resource(ClientConnection::default());
     app.insert_resource(ApplicationCtx::default());
     app.insert_resource(CollisionGroupSet::new());
-    
+
     app.add_systems(Update, systems::frame);
     app.add_systems(Update, systems::check_for_collision_with_map);
     app.add_systems(Update, systems::check_for_collision_with_attack_object);

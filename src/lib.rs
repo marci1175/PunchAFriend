@@ -1,29 +1,76 @@
 use bevy::{
     ecs::{component::Component, system::Resource},
     math::Vec2,
+    transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{CollisionGroups, Group};
+use rand::{rngs::SmallRng, SeedableRng};
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 #[derive(Component, Clone)]
 pub struct SelfCharacter {
-    pub can_jump: bool,
+    pub name: String,
+    pub jumps_remaining: u8,
+    pub direction: Direction,
 }
 
 impl Default for SelfCharacter {
     fn default() -> Self {
-        Self { can_jump: true }
+        Self {
+            name: String::new(),
+            jumps_remaining: 2,
+            direction: Direction::default(),
+        }
+    }
+}
+
+impl SelfCharacter {
+    pub fn new(name: String, jumps_remaining: u8, direction: Direction) -> Self {
+        Self {
+            name,
+            jumps_remaining,
+            direction,
+        }
     }
 }
 
 #[derive(Component, Clone, Default)]
-pub struct ForeignCharacter;
+pub struct ForeignCharacter {
+    pub effects: Vec<AttackEffects>,
+}
 
 #[derive(Component, Clone)]
 pub struct MapElement;
 
 #[derive(Component, Clone)]
-pub struct AttackObject;
+pub struct AttackObject {
+    pub attack_origin: Transform,
+    pub attack_type: AttackType,
+    pub attack_strength: f32,
+}
+
+impl AttackObject {
+    pub fn new(attack_type: AttackType, attack_strength: f32, attack_origin: Transform) -> Self {
+        Self {
+            attack_origin,
+            attack_type,
+            attack_strength,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttackType {
+    Directional(Direction),
+    Super,
+    Quick,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttackEffects {
+    Slowdown,
+    Disabled,
+}
 
 #[derive(Component, Clone)]
 pub struct MapObject {
@@ -32,23 +79,18 @@ pub struct MapObject {
     avoid_collision_from: Direction,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Direction {
     Left,
+    #[default]
     Right,
     Up,
     Down,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct ClientConnection {
     tcp_stream: Option<TcpStream>,
-}
-
-impl Default for ClientConnection {
-    fn default() -> Self {
-        Self { tcp_stream: None }
-    }
 }
 
 impl ClientConnection {
@@ -63,13 +105,19 @@ impl ClientConnection {
 
 #[derive(Resource)]
 pub struct ApplicationCtx {
+    /// The Ui's state in the Application.
     pub ui_state: UiState,
+
+    /// Startup initalized [`SmallRng`] random generator.
+    /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
+    pub rand: rand::rngs::SmallRng,
 }
 
 impl Default for ApplicationCtx {
     fn default() -> Self {
         Self {
             ui_state: UiState::MainMenu,
+            rand: SmallRng::from_rng(&mut rand::rng()),
         }
     }
 }
@@ -84,10 +132,10 @@ pub enum UiState {
 
 #[repr(u32)]
 enum CollisionGroup {
-    MapObject = 0b0001,      // 1
-    SelfCharacter = 0b0010,  // 2
-    ForeignCharacter = 0b0100, // 4
-    AttackObj = 0b1000,      // 8
+    MapObject = 0b0001,
+    SelfCharacter = 0b0010,
+    ForeignCharacter = 0b0100,
+    AttackObj = 0b1000,
 }
 
 #[derive(Resource)]
@@ -102,24 +150,36 @@ pub struct CollisionGroupSet {
     pub attack_obj: CollisionGroups,
 }
 
+impl Default for CollisionGroupSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CollisionGroupSet {
     pub fn new() -> Self {
         Self {
             map_object: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::MapObject as u32),
-                Group::from_bits_truncate(0b1111), 
+                Group::from_bits_truncate(0b1111),
             ),
             self_character: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::SelfCharacter as u32),
-                Group::from_bits_truncate(CollisionGroup::MapObject as u32 | CollisionGroup::SelfCharacter as u32 | CollisionGroup::ForeignCharacter as u32), 
+                Group::from_bits_truncate(
+                    CollisionGroup::MapObject as u32
+                        | CollisionGroup::SelfCharacter as u32
+                        | CollisionGroup::ForeignCharacter as u32,
+                ),
             ),
             foreign_character: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::ForeignCharacter as u32),
-                Group::from_bits_truncate(0b1111), 
+                Group::from_bits_truncate(0b1111),
             ),
             attack_obj: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::AttackObj as u32),
-                Group::from_bits_truncate(CollisionGroup::MapObject as u32 | CollisionGroup::ForeignCharacter as u32), 
+                Group::from_bits_truncate(
+                    CollisionGroup::MapObject as u32 | CollisionGroup::ForeignCharacter as u32,
+                ),
             ),
         }
     }
