@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::{
     asset::Assets,
     core_pipeline::core_2d::Camera2d,
@@ -12,23 +14,26 @@ use bevy::{
     math::vec2,
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::Time,
+    time::{Time, Timer},
     transform::components::Transform,
 };
 
 use bevy_egui::{
-    egui::{self, Align2, Color32, Layout, RichText},
+    egui::{self, Align2, Color32, Layout, Pos2, RichText},
     EguiContexts,
 };
-use bevy_rapier2d::{prelude::{
-    ActiveEvents, AdditionalMassProperties, Ccd, Collider, CollisionEvent, ExternalImpulse, Group, KinematicCharacterController, LockedAxes, Restitution, RigidBody, Velocity
-}, rapier::prelude::CollisionEventFlags};
+use bevy_rapier2d::{
+    prelude::{
+        ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
+        LockedAxes, Restitution, RigidBody, Velocity,
+    },
+    rapier::prelude::CollisionEventFlags,
+};
 use punchafriend::{
-    ApplicationCtx, AttackObject, AttackType, CollisionGroupSet, Direction, ForeignCharacter,
-    MapElement, SelfCharacter, UiState,
+    ApplicationCtx, AttackObject, AttackType, CollisionGroupSet, Combo, Direction, LocalPlayer,
+    MapElement, Player, UiState,
 };
 use rand::Rng;
-use tokio::time::error::Elapsed;
 
 pub fn setup(
     mut commands: Commands,
@@ -60,9 +65,11 @@ pub fn setup(
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(collision_groups.self_character)
         .insert(Ccd::enabled())
-        .insert(SelfCharacter::default());
+        // We add the LocalPlayer bundle to the entity, so we can differentiate the entities to the one we control.
+        .insert(LocalPlayer::default());
 
-    // Create the ForeignCharacter.
+    // Create the ForeignCharacter, but only in debug mode.
+    #[cfg(debug_assertions)]
     commands
         .spawn(RigidBody::Dynamic)
         .insert(Collider::ball(20.0))
@@ -73,7 +80,7 @@ pub fn setup(
         .insert(collision_groups.foreign_character)
         .insert(Ccd::enabled())
         .insert(Velocity::default())
-        .insert(ForeignCharacter::default());
+        .insert(Player::default());
 }
 
 pub fn frame(
@@ -83,7 +90,7 @@ pub fn frame(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<(
         Entity,
-        &mut SelfCharacter,
+        &mut LocalPlayer,
         &mut KinematicCharacterController,
         &Transform,
     )>,
@@ -118,13 +125,17 @@ pub fn frame(
     }
 }
 
-pub fn reset_jump_remaining_for_self_chrac(
+pub fn reset_jump_remaining_for_self_character(
     collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    character_entity_query: Query<Entity, With<SelfCharacter>>,
-    mut self_character_query: Query<&mut SelfCharacter>,
+    character_entity_query: Query<Entity, With<LocalPlayer>>,
+    mut self_character_query: Query<&mut LocalPlayer>,
 ) {
-    if let Some(colliding_entity) = check_for_collision_with_map_and_selfcharacter(collision_events, map_element_query, character_entity_query) {
+    if let Some(colliding_entity) = check_for_collision_with_map_and_selfcharacter(
+        collision_events,
+        map_element_query,
+        character_entity_query,
+    ) {
         if let Ok((mut self_character)) = self_character_query.get_mut(colliding_entity) {
             self_character.jumps_remaining = 2;
         }
@@ -134,7 +145,7 @@ pub fn reset_jump_remaining_for_self_chrac(
 pub fn check_for_collision_with_map_and_selfcharacter(
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    character_entity_query: Query<Entity, With<SelfCharacter>>,
+    character_entity_query: Query<Entity, With<LocalPlayer>>,
 ) -> Option<Entity> {
     for collision in collision_events.read() {
         match collision {
@@ -151,13 +162,11 @@ pub fn check_for_collision_with_map_and_selfcharacter(
                 // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
                 return if entity1_p.is_ok() && entity2_m.is_ok() {
                     Some(entity1_p.unwrap().clone())
-                }
-                else if entity2_p.is_ok() && entity1_m.is_ok() {
+                } else if entity2_p.is_ok() && entity1_m.is_ok() {
                     Some(entity2_p.unwrap().clone())
-                }
-                else {
+                } else {
                     None
-                }          
+                };
             }
             bevy_rapier2d::prelude::CollisionEvent::Stopped(
                 entity,
@@ -172,13 +181,11 @@ pub fn check_for_collision_with_map_and_selfcharacter(
                 // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
                 return if entity1_p.is_ok() && entity2_m.is_ok() {
                     Some(entity1_p.unwrap().clone())
-                }
-                else if entity2_p.is_ok() && entity1_m.is_ok() {
+                } else if entity2_p.is_ok() && entity1_m.is_ok() {
                     Some(entity2_p.unwrap().clone())
-                }
-                else {
+                } else {
                     None
-                }
+                };
             }
         }
     }
@@ -189,7 +196,7 @@ pub fn check_for_collision_with_map_and_selfcharacter(
 fn handle_player_movement(
     query: (
         Entity,
-        Mut<SelfCharacter>,
+        Mut<LocalPlayer>,
         Mut<KinematicCharacterController>,
         &Transform,
     ),
@@ -288,6 +295,7 @@ fn handle_player_movement(
                 punchafriend::AttackType::Directional(self_character.direction),
                 app_ctx.rand.random_range(14.0..21.0),
                 *transform,
+                entity,
             ))
             .insert(collision_groups.attack_obj)
             .insert(attack_transform);
@@ -297,8 +305,9 @@ fn handle_player_movement(
 pub fn check_for_collision_with_attack_object(
     mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
-    foreign_character_query: Query<(Entity, &mut ForeignCharacter, &Transform, &Velocity)>,
+    foreign_character_query: Query<(Entity, &mut Player, &Transform, &Velocity)>,
     attack_object_query: Query<(Entity, &AttackObject)>,
+    mut local_player: Query<&mut LocalPlayer>,
 ) {
     for collision in collision_events.read() {
         match collision {
@@ -321,12 +330,7 @@ pub fn check_for_collision_with_attack_object(
 
                 if let (
                     Some((_attack_ent, attack_object)),
-                    Some((
-                        foreign_entity,
-                        mut foreign_character,
-                        foreign_char_transform,
-                        foreign_char_velocity,
-                    )),
+                    Some((foreign_entity, _, foreign_char_transform, foreign_char_velocity)),
                 ) = (attack_obj_query_result, foreign_character_query_result)
                 {
                     let mut colliding_entity_commands = commands.entity(foreign_entity);
@@ -342,26 +346,35 @@ pub fn check_for_collision_with_attack_object(
                         1.0
                     };
 
-                    colliding_entity_commands
-                        .insert(Velocity {
-                            linvel: vec2(
-                                foreign_char_velocity.linvel.x + 180. * push_left,
-                                foreign_char_velocity.linvel.y
-                                    + if attack_object.attack_type
-                                        == AttackType::Directional(Direction::Up)
-                                    {
-                                        500.
-                                    } else if attack_object.attack_type
-                                        == AttackType::Directional(Direction::Down)
-                                    {
-                                        -500.
-                                    } else {
-                                        0.
-                                    },
-                            ),
-                            // Angles are disabled
-                            angvel: 0.,
-                        });
+                    // Increment the local player's combo counter and reset its timer
+                    if let Ok(mut local_player) = local_player.get_mut(attack_object.attack_by) {
+                        if let Some(combo_counter) = &mut local_player.combo_stats {
+                            combo_counter.combo_counter += 1;
+                            combo_counter.combo_timer.reset();
+                        } else {
+                            local_player.combo_stats = Some(Combo::default());
+                        }
+                    }
+
+                    colliding_entity_commands.insert(Velocity {
+                        linvel: vec2(
+                            foreign_char_velocity.linvel.x + 180. * push_left,
+                            foreign_char_velocity.linvel.y
+                                + if attack_object.attack_type
+                                    == AttackType::Directional(Direction::Up)
+                                {
+                                    500.
+                                } else if attack_object.attack_type
+                                    == AttackType::Directional(Direction::Down)
+                                {
+                                    -500.
+                                } else {
+                                    0.
+                                },
+                        ),
+                        // Angles are disabled
+                        angvel: 0.,
+                    });
                 };
             }
             bevy_rapier2d::prelude::CollisionEvent::Stopped(
@@ -385,12 +398,53 @@ pub fn ui_system(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
+    mut local_player: Query<&mut LocalPlayer>,
+    time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
 
     match app_ctx.ui_state {
         // If there is a game currently playing we should display the HUD.
-        punchafriend::UiState::Game => {}
+        punchafriend::UiState::Game => {
+            let local_player = local_player.get_single_mut();
+
+            if let Ok(mut local_player) = local_player {
+                egui::Area::new("game_hud".into())
+                    .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-200., -50.))
+                    .interactable(false)
+                    .show(ctx, |ui| {
+                        ui.set_min_size(egui::vec2(250., 30.));
+                        ui.allocate_ui(ui.available_size(), |ui| {
+                            let combo_stats = &mut local_player.combo_stats;
+
+                            if let Some(combo_stats) = combo_stats {
+                                ui.label(
+                                    RichText::from(format!("Combo: {}", combo_stats.combo_counter))
+                                        .strong()
+                                        .size(20.),
+                                );
+                                ui.label(
+                                    RichText::from(format!(
+                                        "Combo Time: {:.2}",
+                                        (combo_stats.combo_timer.duration().as_secs_f32()
+                                            - combo_stats.combo_timer.elapsed_secs())
+                                    ))
+                                    .strong()
+                                    .size(20.),
+                                );
+
+                                combo_stats.combo_timer.tick(time.delta());
+                            }
+
+                            if let Some(combo) = combo_stats.clone() {
+                                if combo.combo_timer.finished() {
+                                    *combo_stats = None;
+                                }
+                            }
+                        });
+                    });
+            }
+        }
         // Display main menu window.
         punchafriend::UiState::MainMenu => {
             // Display main title.

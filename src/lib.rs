@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use bevy::{
-    ecs::{component::Component, system::Resource},
+    ecs::{component::Component, entity::Entity, system::Resource},
     math::Vec2,
+    time::Timer,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{CollisionGroups, Group};
@@ -8,35 +11,62 @@ use rand::{rngs::SmallRng, SeedableRng};
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 #[derive(Component, Clone)]
-pub struct SelfCharacter {
+pub struct LocalPlayer {
     pub name: String,
     pub jumps_remaining: u8,
     pub direction: Direction,
+    pub player: Player,
+    pub combo_stats: Option<Combo>,
 }
 
-impl Default for SelfCharacter {
+impl Default for LocalPlayer {
     fn default() -> Self {
         Self {
             name: String::new(),
             jumps_remaining: 2,
             direction: Direction::default(),
+            player: Player::default(),
+            combo_stats: None,
         }
     }
 }
 
-impl SelfCharacter {
-    pub fn new(name: String, jumps_remaining: u8, direction: Direction) -> Self {
+impl LocalPlayer {
+    pub fn new(
+        name: String,
+        jumps_remaining: u8,
+        direction: Direction,
+        player: Player,
+        combo_counter: Option<Combo>,
+    ) -> Self {
         Self {
             name,
             jumps_remaining,
             direction,
+            player,
+            combo_stats: combo_counter,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Combo {
+    pub combo_counter: u32,
+    pub combo_timer: Timer,
+}
+
+impl Default for Combo {
+    fn default() -> Self {
+        Self {
+            combo_counter: 0,
+            combo_timer: Timer::new(Duration::from_secs(2), bevy::time::TimerMode::Once),
         }
     }
 }
 
 #[derive(Component, Clone, Default)]
-pub struct ForeignCharacter {
-    pub effects: Vec<AttackEffects>,
+pub struct Player {
+    pub effects: Vec<Effect>,
 }
 
 #[derive(Component, Clone)]
@@ -47,14 +77,21 @@ pub struct AttackObject {
     pub attack_origin: Transform,
     pub attack_type: AttackType,
     pub attack_strength: f32,
+    pub attack_by: Entity,
 }
 
 impl AttackObject {
-    pub fn new(attack_type: AttackType, attack_strength: f32, attack_origin: Transform) -> Self {
+    pub fn new(
+        attack_type: AttackType,
+        attack_strength: f32,
+        attack_origin: Transform,
+        attack_by: Entity,
+    ) -> Self {
         Self {
             attack_origin,
             attack_type,
             attack_strength,
+            attack_by,
         }
     }
 }
@@ -66,8 +103,14 @@ pub enum AttackType {
     Quick,
 }
 
+#[derive(Clone)]
+pub struct Effect {
+    pub effect_type: EffectType,
+    pub duration: Option<Timer>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AttackEffects {
+pub enum EffectType {
     Slowdown,
     Disabled,
 }
