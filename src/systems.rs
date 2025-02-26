@@ -20,10 +20,9 @@ use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
     EguiContexts,
 };
-use bevy_rapier2d::prelude::{
-    ActiveEvents, AdditionalMassProperties, Ccd, Collider, ExternalImpulse, Group,
-    KinematicCharacterController, LockedAxes, Restitution, RigidBody, Velocity,
-};
+use bevy_rapier2d::{prelude::{
+    ActiveEvents, AdditionalMassProperties, Ccd, Collider, CollisionEvent, ExternalImpulse, Group, KinematicCharacterController, LockedAxes, Restitution, RigidBody, Velocity
+}, rapier::prelude::CollisionEventFlags};
 use punchafriend::{
     ApplicationCtx, AttackObject, AttackType, CollisionGroupSet, Direction, ForeignCharacter,
     MapElement, SelfCharacter, UiState,
@@ -119,11 +118,24 @@ pub fn frame(
     }
 }
 
-pub fn check_for_collision_with_map(
-    mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
+pub fn reset_jump_remaining_for_self_chrac(
+    collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
+    character_entity_query: Query<Entity, With<SelfCharacter>>,
     mut self_character_query: Query<&mut SelfCharacter>,
 ) {
+    if let Some(colliding_entity) = check_for_collision_with_map_and_selfcharacter(collision_events, map_element_query, character_entity_query) {
+        if let Ok((mut self_character)) = self_character_query.get_mut(colliding_entity) {
+            self_character.jumps_remaining = 2;
+        }
+    }
+}
+
+pub fn check_for_collision_with_map_and_selfcharacter(
+    mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
+    map_element_query: Query<Entity, With<MapElement>>,
+    character_entity_query: Query<Entity, With<SelfCharacter>>,
+) -> Option<Entity> {
     for collision in collision_events.read() {
         match collision {
             bevy_rapier2d::prelude::CollisionEvent::Started(
@@ -131,32 +143,47 @@ pub fn check_for_collision_with_map(
                 entity2,
                 _collision_event_flags,
             ) => {
-                let entity1_p = self_character_query.get(*entity).is_ok();
-                let entity1_m = map_element_query.get(*entity).is_ok();
-                let entity2_p = self_character_query.get(*entity2).is_ok();
-                let entity2_m = map_element_query.get(*entity2).is_ok();
+                let entity1_p = character_entity_query.get(*entity);
+                let entity1_m = map_element_query.get(*entity);
+                let entity2_p = character_entity_query.get(*entity2);
+                let entity2_m = map_element_query.get(*entity2);
 
-                // Check if entity1 is the player and entity2 is the map element
-                if entity1_p && entity2_m {
-                    let mut self_character_ref = self_character_query.get_mut(*entity).unwrap();
-
-                    self_character_ref.jumps_remaining = 2;
+                // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
+                return if entity1_p.is_ok() && entity2_m.is_ok() {
+                    Some(entity1_p.unwrap().clone())
                 }
-
-                // Check if entity2 is the player and entity1 is the map element
-                if entity1_m && entity2_p {
-                    let mut self_character_ref = self_character_query.get_mut(*entity2).unwrap();
-
-                    self_character_ref.jumps_remaining = 2;
+                else if entity2_p.is_ok() && entity1_m.is_ok() {
+                    Some(entity2_p.unwrap().clone())
                 }
+                else {
+                    None
+                }          
             }
             bevy_rapier2d::prelude::CollisionEvent::Stopped(
                 entity,
-                entity1,
-                collision_event_flags,
-            ) => {}
+                entity2,
+                _collision_event_flags,
+            ) => {
+                let entity1_p = character_entity_query.get(*entity);
+                let entity1_m = map_element_query.get(*entity);
+                let entity2_p = character_entity_query.get(*entity2);
+                let entity2_m = map_element_query.get(*entity2);
+
+                // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
+                return if entity1_p.is_ok() && entity2_m.is_ok() {
+                    Some(entity1_p.unwrap().clone())
+                }
+                else if entity2_p.is_ok() && entity1_m.is_ok() {
+                    Some(entity2_p.unwrap().clone())
+                }
+                else {
+                    None
+                }
+            }
         }
     }
+
+    None
 }
 
 fn handle_player_movement(
