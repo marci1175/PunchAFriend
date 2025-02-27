@@ -14,24 +14,26 @@ use bevy::{
     math::vec2,
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::{Time, Timer},
+    time::Time,
     transform::components::Transform,
 };
-
 use bevy_egui::{
-    egui::{self, Align2, Color32, Layout, Pos2, RichText},
+    egui::{self, Align2, Color32, Layout, RichText},
     EguiContexts,
 };
-use bevy_rapier2d::{
-    prelude::{
-        ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
-        LockedAxes, Restitution, RigidBody, Velocity,
-    },
-    rapier::prelude::CollisionEventFlags,
+use bevy_rapier2d::prelude::{
+    ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
+    LockedAxes, RigidBody, Velocity,
 };
 use punchafriend::{
-    ApplicationCtx, AttackObject, AttackType, CollisionGroupSet, Combo, Direction, LocalPlayer,
-    MapElement, Player, UiState,
+    game::{
+        combat::{AttackObject, AttackType, Combo},
+        pawns::{
+            local_player_attack, local_player_input, set_movement_direction_var, LocalPlayer,
+            Player,
+        },
+    },
+    ApplicationCtx, CollisionGroupSet, Direction, MapElement, UiState,
 };
 use rand::Rng;
 
@@ -63,7 +65,7 @@ pub fn setup(
             ..Default::default()
         })
         .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(collision_groups.self_character)
+        .insert(collision_groups.local_player)
         .insert(Ccd::enabled())
         // We add the LocalPlayer bundle to the entity, so we can differentiate the entities to the one we control.
         .insert(LocalPlayer::default());
@@ -77,7 +79,7 @@ pub fn setup(
         .insert(AdditionalMassProperties::Mass(0.1))
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(collision_groups.foreign_character)
+        .insert(collision_groups.player)
         .insert(Ccd::enabled())
         .insert(Velocity::default())
         .insert(Player::default());
@@ -114,7 +116,7 @@ pub fn frame(
     }
 
     if let Ok(query) = query.get_single_mut() {
-        handle_player_movement(
+        local_player_movement(
             query,
             commands,
             keyboard_input,
@@ -125,19 +127,19 @@ pub fn frame(
     }
 }
 
-pub fn reset_jump_remaining_for_self_character(
+pub fn reset_jump_remaining_for_local_player(
     collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
     character_entity_query: Query<Entity, With<LocalPlayer>>,
-    mut self_character_query: Query<&mut LocalPlayer>,
+    mut local_player_query: Query<&mut LocalPlayer>,
 ) {
     if let Some(colliding_entity) = check_for_collision_with_map_and_selfcharacter(
         collision_events,
         map_element_query,
         character_entity_query,
     ) {
-        if let Ok((mut self_character)) = self_character_query.get_mut(colliding_entity) {
-            self_character.jumps_remaining = 2;
+        if let Ok(mut local_player) = local_player_query.get_mut(colliding_entity) {
+            local_player.jumps_remaining = 2;
         }
     }
 }
@@ -161,9 +163,9 @@ pub fn check_for_collision_with_map_and_selfcharacter(
 
                 // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
                 return if entity1_p.is_ok() && entity2_m.is_ok() {
-                    Some(entity1_p.unwrap().clone())
+                    Some(entity1_p.unwrap())
                 } else if entity2_p.is_ok() && entity1_m.is_ok() {
-                    Some(entity2_p.unwrap().clone())
+                    Some(entity2_p.unwrap())
                 } else {
                     None
                 };
@@ -180,9 +182,9 @@ pub fn check_for_collision_with_map_and_selfcharacter(
 
                 // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
                 return if entity1_p.is_ok() && entity2_m.is_ok() {
-                    Some(entity1_p.unwrap().clone())
+                    Some(entity1_p.unwrap())
                 } else if entity2_p.is_ok() && entity1_m.is_ok() {
-                    Some(entity2_p.unwrap().clone())
+                    Some(entity2_p.unwrap())
                 } else {
                     None
                 };
@@ -193,7 +195,7 @@ pub fn check_for_collision_with_map_and_selfcharacter(
     None
 }
 
-fn handle_player_movement(
+fn local_player_movement(
     query: (
         Entity,
         Mut<LocalPlayer>,
@@ -203,51 +205,26 @@ fn handle_player_movement(
     mut commands: Commands,
     keyboard_input: ButtonInput<KeyCode>,
     collision_groups: Res<CollisionGroupSet>,
-    mut app_ctx: ResMut<ApplicationCtx>,
+    app_ctx: ResMut<ApplicationCtx>,
     time: Res<Time>,
 ) {
-    //
-    let (entity, mut self_character, mut controller, transform) = query;
+    // Unpack the tuple created by the tuple
+    let (entity, mut local_player, controller, transform) = query;
 
-    if keyboard_input.pressed(KeyCode::KeyA) {
-        // Move the local player to the left
-        controller.translation = Some(vec2(-450. * time.delta_secs(), 0.));
-    }
+    // Handle the movement of the LocalPlayer
+    local_player_input(
+        &mut commands,
+        &keyboard_input,
+        time,
+        entity,
+        &mut local_player,
+        controller,
+    );
 
-    if keyboard_input.pressed(KeyCode::KeyD) {
-        // Move the local player to the right
-        controller.translation = Some(vec2(450. * time.delta_secs(), 0.));
-    }
+    // Set the variables for the LocalPlayer
+    set_movement_direction_var(&keyboard_input, &mut local_player);
 
-    if keyboard_input.just_pressed(KeyCode::KeyD) {
-        // Update latest direction
-        self_character.direction = Direction::Right;
-    }
-
-    if keyboard_input.just_pressed(KeyCode::KeyA) {
-        // Update latest direction
-        self_character.direction = Direction::Left;
-    }
-
-    if keyboard_input.just_pressed(KeyCode::KeyW) {
-        // Update latest direction
-        self_character.direction = Direction::Up;
-    }
-
-    // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
-    // If there are no more jumps remaining the user needs to wait until they touch a MapObject again. This indicates they've landed.
-    // If the user is holding W the entitiy should automaticly jump once on the ground.
-    if keyboard_input.just_pressed(KeyCode::KeyW) && self_character.jumps_remaining != 0
-        || keyboard_input.pressed(KeyCode::KeyW) && self_character.jumps_remaining == 2
-    {
-        commands.entity(entity).insert(Velocity {
-            linvel: vec2(0., 500.),
-            angvel: 0.5,
-        });
-
-        self_character.jumps_remaining -= 1;
-    }
-
+    // For this key, it does not matter if its checked with `just_pressed()` or `pressed()`, so we can avoid double checking by just doing both under one check.
     if keyboard_input.just_pressed(KeyCode::KeyS) {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., -500.),
@@ -255,50 +232,19 @@ fn handle_player_movement(
         });
 
         // Update latest direction
-        self_character.direction = Direction::Down;
+        local_player.direction = Direction::Down;
     }
 
-    // if the player is attacking
+    // if the player is attacking, handle the local player's attack
     if keyboard_input.just_pressed(KeyCode::Space) {
-        let (attack_collider_width, attack_collider_height) = (50., 50.);
-        let attack_collider = Collider::cuboid(attack_collider_width, attack_collider_height);
-
-        let attack_transform = match self_character.direction {
-            Direction::Left => Transform::from_xyz(
-                transform.translation.x - attack_collider_width,
-                transform.translation.y,
-                0.,
-            ),
-            Direction::Right => Transform::from_xyz(
-                transform.translation.x + attack_collider_width,
-                transform.translation.y,
-                0.,
-            ),
-            Direction::Up => Transform::from_xyz(
-                transform.translation.x,
-                transform.translation.y + attack_collider_height,
-                0.,
-            ),
-            Direction::Down => Transform::from_xyz(
-                transform.translation.x,
-                transform.translation.y - attack_collider_height,
-                0.,
-            ),
-        };
-
-        // Spawn in a cuboid and then caluclate the collisions from that
-        commands
-            .spawn(attack_collider)
-            .insert(ActiveEvents::COLLISION_EVENTS)
-            .insert(ActiveEvents::CONTACT_FORCE_EVENTS)
-            .insert(AttackObject::new(
-                punchafriend::AttackType::Directional(self_character.direction),
-                app_ctx.rand.random_range(14.0..21.0),
-                *transform,
-                entity,
-            ))
-            .insert(collision_groups.attack_obj)
-            .insert(attack_transform);
+        local_player_attack(
+            commands,
+            collision_groups,
+            app_ctx,
+            entity,
+            &mut local_player,
+            transform,
+        );
     }
 }
 
@@ -352,7 +298,7 @@ pub fn check_for_collision_with_attack_object(
                             combo_counter.combo_counter += 1;
                             combo_counter.combo_timer.reset();
                         } else {
-                            local_player.combo_stats = Some(Combo::default());
+                            local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
                         }
                     }
 
@@ -425,7 +371,7 @@ pub fn ui_system(
                                 );
                                 ui.label(
                                     RichText::from(format!(
-                                        "Combo Time: {:.2}",
+                                        "Time left: {:.2}s",
                                         (combo_stats.combo_timer.duration().as_secs_f32()
                                             - combo_stats.combo_timer.elapsed_secs())
                                     ))

@@ -22,7 +22,7 @@ async fn main() {
     app.insert_resource(CollisionGroupSet::new());
 
     app.add_systems(Update, systems::frame);
-    app.add_systems(Update, systems::reset_jump_remaining_for_self_character);
+    app.add_systems(Update, systems::reset_jump_remaining_for_local_player);
     app.add_systems(Update, systems::check_for_collision_with_attack_object);
     app.add_systems(Update, systems::ui_system);
 

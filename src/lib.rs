@@ -1,119 +1,18 @@
-use std::time::Duration;
+/// Import elements of the Game itself.
+pub mod game;
 
 use bevy::{
-    ecs::{component::Component, entity::Entity, system::Resource},
+    ecs::{component::Component, system::Resource},
     math::Vec2,
-    time::Timer,
-    transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{CollisionGroups, Group};
 use rand::{rngs::SmallRng, SeedableRng};
 use tokio::net::{TcpStream, ToSocketAddrs};
 
 #[derive(Component, Clone)]
-pub struct LocalPlayer {
-    pub name: String,
-    pub jumps_remaining: u8,
-    pub direction: Direction,
-    pub player: Player,
-    pub combo_stats: Option<Combo>,
-}
-
-impl Default for LocalPlayer {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            jumps_remaining: 2,
-            direction: Direction::default(),
-            player: Player::default(),
-            combo_stats: None,
-        }
-    }
-}
-
-impl LocalPlayer {
-    pub fn new(
-        name: String,
-        jumps_remaining: u8,
-        direction: Direction,
-        player: Player,
-        combo_counter: Option<Combo>,
-    ) -> Self {
-        Self {
-            name,
-            jumps_remaining,
-            direction,
-            player,
-            combo_stats: combo_counter,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Combo {
-    pub combo_counter: u32,
-    pub combo_timer: Timer,
-}
-
-impl Default for Combo {
-    fn default() -> Self {
-        Self {
-            combo_counter: 0,
-            combo_timer: Timer::new(Duration::from_secs(2), bevy::time::TimerMode::Once),
-        }
-    }
-}
-
-#[derive(Component, Clone, Default)]
-pub struct Player {
-    pub effects: Vec<Effect>,
-}
-
-#[derive(Component, Clone)]
+/// A MapElement instnace is an object which is a part of the map.
+/// This is used to make difference between Entities which are a part of the obstacles contained in the map.
 pub struct MapElement;
-
-#[derive(Component, Clone)]
-pub struct AttackObject {
-    pub attack_origin: Transform,
-    pub attack_type: AttackType,
-    pub attack_strength: f32,
-    pub attack_by: Entity,
-}
-
-impl AttackObject {
-    pub fn new(
-        attack_type: AttackType,
-        attack_strength: f32,
-        attack_origin: Transform,
-        attack_by: Entity,
-    ) -> Self {
-        Self {
-            attack_origin,
-            attack_type,
-            attack_strength,
-            attack_by,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AttackType {
-    Directional(Direction),
-    Super,
-    Quick,
-}
-
-#[derive(Clone)]
-pub struct Effect {
-    pub effect_type: EffectType,
-    pub duration: Option<Timer>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EffectType {
-    Slowdown,
-    Disabled,
-}
 
 #[derive(Component, Clone)]
 pub struct MapObject {
@@ -186,9 +85,9 @@ pub struct CollisionGroupSet {
     /// Collides with all
     pub map_object: CollisionGroups,
     /// Only collides with MapObject & itself
-    pub self_character: CollisionGroups,
+    pub local_player: CollisionGroups,
     /// Collides with everything except SelfCharacter
-    pub foreign_character: CollisionGroups,
+    pub player: CollisionGroups,
     /// Collides with MapObject & ForeignCharacter, not SelfCharacter
     pub attack_obj: CollisionGroups,
 }
@@ -206,7 +105,7 @@ impl CollisionGroupSet {
                 Group::from_bits_truncate(CollisionGroup::MapObject as u32),
                 Group::from_bits_truncate(0b1111),
             ),
-            self_character: CollisionGroups::new(
+            local_player: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::SelfCharacter as u32),
                 Group::from_bits_truncate(
                     CollisionGroup::MapObject as u32
@@ -214,7 +113,7 @@ impl CollisionGroupSet {
                         | CollisionGroup::ForeignCharacter as u32,
                 ),
             ),
-            foreign_character: CollisionGroups::new(
+            player: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::ForeignCharacter as u32),
                 Group::from_bits_truncate(0b1111),
             ),
