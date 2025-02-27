@@ -16,9 +16,8 @@ pub struct MapElement;
 
 #[derive(Component, Clone)]
 pub struct MapObject {
-    size: Vec2,
-
-    avoid_collision_from: Direction,
+    pub size: Vec2,
+    pub avoid_collision_from: Direction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -32,7 +31,7 @@ pub enum Direction {
 
 #[derive(Resource, Default)]
 pub struct ClientConnection {
-    tcp_stream: Option<TcpStream>,
+    pub tcp_stream: Option<TcpStream>,
 }
 
 impl ClientConnection {

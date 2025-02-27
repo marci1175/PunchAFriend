@@ -29,8 +29,7 @@ use punchafriend::{
     game::{
         combat::{AttackObject, AttackType, Combo},
         pawns::{
-            local_player_attack, local_player_input, set_movement_direction_var, LocalPlayer,
-            Player,
+            local_player_attack, local_player_movement, local_player_handle, set_movement_direction_var, LocalPlayer, Player
         },
     },
     ApplicationCtx, CollisionGroupSet, Direction, MapElement, UiState,
@@ -116,7 +115,7 @@ pub fn frame(
     }
 
     if let Ok(query) = query.get_single_mut() {
-        local_player_movement(
+        local_player_handle(
             query,
             commands,
             keyboard_input,
@@ -193,59 +192,6 @@ pub fn check_for_collision_with_map_and_selfcharacter(
     }
 
     None
-}
-
-fn local_player_movement(
-    query: (
-        Entity,
-        Mut<LocalPlayer>,
-        Mut<KinematicCharacterController>,
-        &Transform,
-    ),
-    mut commands: Commands,
-    keyboard_input: ButtonInput<KeyCode>,
-    collision_groups: Res<CollisionGroupSet>,
-    app_ctx: ResMut<ApplicationCtx>,
-    time: Res<Time>,
-) {
-    // Unpack the tuple created by the tuple
-    let (entity, mut local_player, controller, transform) = query;
-
-    // Handle the movement of the LocalPlayer
-    local_player_input(
-        &mut commands,
-        &keyboard_input,
-        time,
-        entity,
-        &mut local_player,
-        controller,
-    );
-
-    // Set the variables for the LocalPlayer
-    set_movement_direction_var(&keyboard_input, &mut local_player);
-
-    // For this key, it does not matter if its checked with `just_pressed()` or `pressed()`, so we can avoid double checking by just doing both under one check.
-    if keyboard_input.just_pressed(KeyCode::KeyS) {
-        commands.entity(entity).insert(Velocity {
-            linvel: vec2(0., -500.),
-            angvel: 0.5,
-        });
-
-        // Update latest direction
-        local_player.direction = Direction::Down;
-    }
-
-    // if the player is attacking, handle the local player's attack
-    if keyboard_input.just_pressed(KeyCode::Space) {
-        local_player_attack(
-            commands,
-            collision_groups,
-            app_ctx,
-            entity,
-            &mut local_player,
-            transform,
-        );
-    }
 }
 
 pub fn check_for_collision_with_attack_object(

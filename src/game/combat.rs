@@ -10,6 +10,7 @@ use bevy::{
 };
 use bevy_rapier2d::prelude::{ActiveEvents, Collider};
 use rand::Rng;
+use strum::EnumDiscriminants;
 use std::time::Duration;
 
 use crate::{ApplicationCtx, CollisionGroupSet, Direction};
@@ -83,10 +84,16 @@ pub struct Effect {
     pub duration: Option<Timer>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl Effect {
+    pub fn new(effect_type: EffectType, duration: Option<Timer>) -> Self {
+        Self { effect_type, duration }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, EnumDiscriminants)]
 pub enum EffectType {
     Slowdown,
-    Disabled,
+    Stunned,
 }
 
 /// Spawns in a Cuboid and then the collisions are checked so that we know which enemies are affected.

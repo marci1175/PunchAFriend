@@ -7,7 +7,7 @@ use bevy::{
     },
     input::{keyboard::KeyCode, ButtonInput},
     math::vec2,
-    time::Time,
+    time::{Time, Timer},
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{Collider, KinematicCharacterController, Velocity};
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::{ApplicationCtx, CollisionGroupSet, Direction};
 
-use super::combat::{spawn_attack, Combo, Effect};
+use super::combat::{spawn_attack, AttackType, Combo, Effect, EffectType, EffectTypeDiscriminants};
 
 #[derive(Component, Clone)]
 pub struct LocalPlayer {
@@ -78,22 +78,31 @@ pub fn set_movement_direction_var(
 }
 
 /// Handles the local player's input and modifying the controller of the Entity according to the input given.
-pub fn local_player_input(
+pub fn local_player_movement(
     commands: &mut Commands<'_, '_>,
     keyboard_input: &ButtonInput<KeyCode>,
-    time: Res<'_, Time>,
+    time: &Res<'_, Time>,
     entity: Entity,
     local_player: &mut Mut<'_, LocalPlayer>,
     mut controller: Mut<'_, KinematicCharacterController>,
 ) {
+    let move_factor = 450. * {
+        if local_player.player.has_effect(EffectType::Slowdown) {
+            0.5
+        }
+        else {
+            1.    
+        }
+    };
+
     if keyboard_input.pressed(KeyCode::KeyA) {
         // Move the local player to the left
-        controller.translation = Some(vec2(-450. * time.delta_secs(), 0.));
+        controller.translation = Some(vec2(-move_factor * time.delta_secs(), 0.));
     }
 
     if keyboard_input.pressed(KeyCode::KeyD) {
         // Move the local player to the right
-        controller.translation = Some(vec2(450. * time.delta_secs(), 0.));
+        controller.translation = Some(vec2(move_factor * time.delta_secs(), 0.));
     }
 
     // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
@@ -159,6 +168,64 @@ pub fn local_player_attack(
     );
 }
 
+pub fn local_player_handle(
+    query: (
+        Entity,
+        Mut<LocalPlayer>,
+        Mut<KinematicCharacterController>,
+        &Transform,
+    ),
+    mut commands: Commands,
+    keyboard_input: ButtonInput<KeyCode>,
+    collision_groups: Res<CollisionGroupSet>,
+    app_ctx: ResMut<ApplicationCtx>,
+    time: Res<Time>,
+) {
+    // Unpack the tuple created by the tuple
+    let (entity, mut local_player, controller, transform) = query;
+
+    if !local_player.player.has_effect(EffectType::Stunned) {
+        // Handle the movement of the LocalPlayer
+        local_player_movement(
+            &mut commands,
+            &keyboard_input,
+            &time,
+            entity,
+            &mut local_player,
+            controller,
+        );
+
+        // Set the variables for the LocalPlayer
+        set_movement_direction_var(&keyboard_input, &mut local_player);
+
+        // For this key, it does not matter if its checked with `just_pressed()` or `pressed()`, so we can avoid double checking by just doing both under one check.
+        if keyboard_input.just_pressed(KeyCode::KeyS) {
+            commands.entity(entity).insert(Velocity {
+                linvel: vec2(0., -500.),
+                angvel: 0.5,
+            });
+
+            // Update latest direction
+            local_player.direction = Direction::Down;
+        }
+    }
+    
+    // if the player is attacking, handle the local player's attack
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        local_player_attack(
+            commands,
+            collision_groups,
+            app_ctx,
+            entity,
+            &mut local_player,
+            transform,
+        );
+    }
+
+    // Increment effects
+    local_player.player.tick_effects(time.delta());
+}
+
 #[derive(Component, Clone, Default)]
 /// A Player instance contains useful information about a Player entity.
 pub struct Player {
@@ -187,5 +254,9 @@ impl Player {
             // If the timer hadnt finished yet keep the effect.
             true
         });
+    }
+
+    pub fn has_effect(&self, rhs: EffectType) -> bool {
+        self.effects.iter().any(|effect| effect.effect_type == rhs)
     }
 }
