@@ -8,7 +8,6 @@ use bevy::{
         event::EventReader,
         query::With,
         system::{Commands, Query, Res, ResMut},
-        world::Mut,
     },
     input::{keyboard::KeyCode, ButtonInput},
     math::vec2,
@@ -25,16 +24,15 @@ use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
     LockedAxes, RigidBody, Velocity,
 };
-use punchafriend::{
+use server::{
     game::{
         combat::{AttackObject, AttackType, Combo},
         pawns::{
-            local_player_attack, local_player_movement, local_player_handle, set_movement_direction_var, LocalPlayer, Player
+            local_player_handle, LocalPlayer, Player
         },
     },
     ApplicationCtx, CollisionGroupSet, Direction, MapElement, UiState,
 };
-use rand::Rng;
 
 pub fn setup(
     mut commands: Commands,
@@ -148,7 +146,7 @@ pub fn check_for_collision_with_map_and_selfcharacter(
     map_element_query: Query<Entity, With<MapElement>>,
     character_entity_query: Query<Entity, With<LocalPlayer>>,
 ) -> Option<Entity> {
-    for collision in collision_events.read() {
+    if let Some(collision) = collision_events.read().next() {
         match collision {
             bevy_rapier2d::prelude::CollisionEvent::Started(
                 entity,
@@ -297,7 +295,7 @@ pub fn ui_system(
 
     match app_ctx.ui_state {
         // If there is a game currently playing we should display the HUD.
-        punchafriend::UiState::Game => {
+        server::UiState::Game => {
             let local_player = local_player.get_single_mut();
 
             if let Ok(mut local_player) = local_player {
@@ -338,7 +336,7 @@ pub fn ui_system(
             }
         }
         // Display main menu window.
-        punchafriend::UiState::MainMenu => {
+        server::UiState::MainMenu => {
             // Display main title.
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
@@ -372,7 +370,7 @@ pub fn ui_system(
                     });
                 });
         }
-        punchafriend::UiState::PauseWindow => {
+        server::UiState::PauseWindow => {
             // Paint the pause menu's backgound
             egui::Area::new("pause_window_background".into()).show(ctx, |ui| {
                 ui.painter()

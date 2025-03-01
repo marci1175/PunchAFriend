@@ -30,11 +30,11 @@ pub enum Direction {
 }
 
 #[derive(Resource, Default)]
-pub struct ClientConnection {
+pub struct ServerConnection {
     pub tcp_stream: Option<TcpStream>,
 }
 
-impl ClientConnection {
+impl ServerConnection {
     pub async fn connect_to_address(addr: impl ToSocketAddrs) -> anyhow::Result<Self> {
         let tcp_stream = TcpStream::connect(addr).await?;
 

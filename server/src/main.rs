@@ -6,7 +6,7 @@ use bevy_rapier2d::{
     plugin::{NoUserData, RapierPhysicsPlugin},
     render::RapierDebugRenderPlugin,
 };
-use punchafriend::{ApplicationCtx, ClientConnection, CollisionGroupSet};
+use server::{ApplicationCtx, ServerConnection, CollisionGroupSet};
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +17,7 @@ async fn main() {
     app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0));
     app.add_plugins(RapierDebugRenderPlugin::default());
 
-    app.insert_resource(ClientConnection::default());
+    app.insert_resource(ServerConnection::default());
     app.insert_resource(ApplicationCtx::default());
     app.insert_resource(CollisionGroupSet::new());
 
