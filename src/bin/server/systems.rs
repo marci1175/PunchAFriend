@@ -43,7 +43,7 @@ pub fn setup(
         .insert(MapElement);
 }
 
-pub fn frame(
+pub fn tick(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
