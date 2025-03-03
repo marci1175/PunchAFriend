@@ -1,43 +1,53 @@
-use std::{net::{IpAddr, SocketAddr}, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bevy::ecs::system::{ResMut, Resource};
+use bevy::{
+    ecs::{
+        entity::Entity,
+        system::{Query, Res, ResMut, Resource},
+    },
+    time::Time,
+};
 use bevy_egui::{
-    EguiContexts,
     egui::{self, Align2, Color32, Layout, RichText},
+    EguiContexts,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use egui_toast::{Toast, ToastOptions, Toasts};
-use parking_lot::Mutex;
-use rand::{SeedableRng, rngs::SmallRng};
-use tokio::{net::{TcpStream, UdpSocket}, sync::mpsc::{channel, Receiver}};
+use quinn::{
+    rustls::{self, pki_types::CertificateDer},
+    ClientConfig,
+};
+use rand::{rngs::SmallRng, SeedableRng};
+use tokio::sync::mpsc::{channel, Receiver};
+
+use punchafriend::game::pawns::Player;
 
 #[derive(Resource)]
 pub struct ClientConnection {
-    pub tcp_connection_handle: Arc<Mutex<TcpStream>>,
-    pub game_connection_handle: Arc<Mutex<UdpSocket>>,
+    pub connection_handle: quinn::Endpoint,
 }
 
 impl ClientConnection {
-    pub async fn connect_to_address(address: String) -> anyhow::Result<Self> {
+    pub async fn connect_to_address(
+        address: String,
+        certificate: CertificateDer<'static>,
+    ) -> anyhow::Result<Self> {
         // Parse socket address.
-        let mut address: SocketAddr = address.parse()?;
-        
-        // Create a new TcpStream instance.
-        let tcp_stream = TcpStream::connect(address).await?;
+        let address: SocketAddr = address.parse()?;
 
-        // Bind to a local address.
-        let udp_socket = UdpSocket::bind("[::]:0").await?;
+        // Create a new QUIC instance.
+        let mut quic_stream = quinn::Endpoint::client(address)?;
 
-        // Modify the SocketAddr instance.
-        address.set_port(address.port() + 1);
+        // Create the new Certificate variable
+        let mut certs = rustls::RootCertStore::empty();
+        certs.add(certificate)?;
 
-        // Set the default desitnation of the socket
-        udp_socket.connect(address).await?;
+        quic_stream
+            .set_default_client_config(ClientConfig::with_root_certificates(Arc::new(certs))?);
 
-        let game_connection_handle = Arc::new(Mutex::new(udp_socket));
-        let tcp_connection_handle = Arc::new(Mutex::new(tcp_stream));
-
-        Ok(ClientConnection { tcp_connection_handle, game_connection_handle })
+        Ok(ClientConnection {
+            connection_handle: quic_stream,
+        })
     }
 }
 
@@ -72,17 +82,9 @@ pub enum UiMode {
     PauseWindow,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UiState {
     connect_to_address: String,
-}
-
-impl Default for UiState {
-    fn default() -> Self {
-        Self {
-            connect_to_address: String::new(),
-        }
-    }
 }
 
 impl Default for ApplicationCtx {
@@ -98,15 +100,60 @@ impl Default for ApplicationCtx {
     }
 }
 
-pub fn ui_system(mut context: EguiContexts, mut app_ctx: ResMut<ApplicationCtx>, runtime: ResMut<TokioTasksRuntime>) {
+pub fn ui_system(
+    mut context: EguiContexts,
+    mut app_ctx: ResMut<ApplicationCtx>,
+    runtime: ResMut<TokioTasksRuntime>,
+    mut local_player: Query<(Entity, &mut Player)>,
+    time: Res<Time>,
+) {
     // Get context
     let ctx = context.ctx_mut();
-    
+
     // Show toasts
     app_ctx.egui_toasts.show(ctx);
 
     match app_ctx.ui_mode {
-        UiMode::Game => {}
+        UiMode::Game => {
+            let local_player = local_player.get_single_mut();
+
+            if let Ok((entity, mut local_player)) = local_player {
+                egui::Area::new("game_hud".into())
+                    .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-200., -50.))
+                    .interactable(false)
+                    .show(ctx, |ui| {
+                        ui.set_min_size(egui::vec2(250., 30.));
+                        ui.allocate_ui(ui.available_size(), |ui| {
+                            let combo_stats = &mut local_player.combo_stats;
+
+                            if let Some(combo_stats) = combo_stats {
+                                ui.label(
+                                    RichText::from(format!("Combo: {}", combo_stats.combo_counter))
+                                        .strong()
+                                        .size(20.),
+                                );
+                                ui.label(
+                                    RichText::from(format!(
+                                        "Time left: {:.2}s",
+                                        (combo_stats.combo_timer.duration().as_secs_f32()
+                                            - combo_stats.combo_timer.elapsed_secs())
+                                    ))
+                                    .strong()
+                                    .size(20.),
+                                );
+
+                                combo_stats.combo_timer.tick(time.delta());
+                            }
+
+                            if let Some(combo) = combo_stats.clone() {
+                                if combo.combo_timer.finished() {
+                                    *combo_stats = None;
+                                }
+                            }
+                        });
+                    });
+            }
+        }
         UiMode::MainMenu => {
             // Display main title.
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -162,7 +209,11 @@ pub fn ui_system(mut context: EguiContexts, mut app_ctx: ResMut<ApplicationCtx>,
                         // Create the connecting thread
                         runtime.spawn_background_task(|_ctx| async move {
                             // Attempt to make a connection to the remote address.
-                            let client_connection = ClientConnection::connect_to_address(address).await;
+                            let client_connection = ClientConnection::connect_to_address(
+                                address,
+                                CertificateDer::from_slice(&[]),
+                            )
+                            .await;
 
                             // Send it to the front end no matter the end result.
                             sender.send(client_connection).await.unwrap();
@@ -195,14 +246,28 @@ pub fn ui_system(mut context: EguiContexts, mut app_ctx: ResMut<ApplicationCtx>,
         }
     }
 
+    // Try receiving the incoming successful connection to the remote address.
     if let Ok(connection) = app_ctx.connection_receiver.try_recv() {
         match connection {
             Ok(valid_connection) => {
+                // Set the client connection variable
                 app_ctx.client_connection = Some(valid_connection);
-            },
+
+                // Set the window to be game
+                app_ctx.ui_mode = UiMode::Game;
+            }
             Err(error) => {
-                app_ctx.egui_toasts.add(Toast::new().kind(egui_toast::ToastKind::Error).text(format!("Connection Failed: {}", error.to_string())).options(ToastOptions::default().duration(Some(Duration::from_secs(3))).show_progress(true)));
-            },
+                app_ctx.egui_toasts.add(
+                    Toast::new()
+                        .kind(egui_toast::ToastKind::Error)
+                        .text(format!("Connection Failed: {}", error))
+                        .options(
+                            ToastOptions::default()
+                                .duration(Some(Duration::from_secs(3)))
+                                .show_progress(true),
+                        ),
+                );
+            }
         }
     }
 }

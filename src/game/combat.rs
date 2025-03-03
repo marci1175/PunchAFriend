@@ -3,19 +3,18 @@ use bevy::{
         component::Component,
         entity::Entity,
         system::{Commands, Res, ResMut},
-        world::Mut,
     },
     time::Timer,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{ActiveEvents, Collider};
 use rand::Rng;
-use strum::EnumDiscriminants;
 use std::time::Duration;
+use strum::EnumDiscriminants;
 
 use crate::{ApplicationCtx, CollisionGroupSet, Direction};
 
-use super::pawns::LocalPlayer;
+use super::pawns::Player;
 
 #[derive(Debug, Clone)]
 pub struct Combo {
@@ -86,7 +85,10 @@ pub struct Effect {
 
 impl Effect {
     pub fn new(effect_type: EffectType, duration: Option<Timer>) -> Self {
-        Self { effect_type, duration }
+        Self {
+            effect_type,
+            duration,
+        }
     }
 }
 
@@ -102,7 +104,7 @@ pub fn spawn_attack(
     collision_groups: Res<'_, CollisionGroupSet>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     entity: Entity,
-    local_player: &mut Mut<'_, LocalPlayer>,
+    local_player: &mut Player,
     transform: &Transform,
     attack_collider: Collider,
     attack_transform: Transform,

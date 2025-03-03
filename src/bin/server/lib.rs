@@ -1,13 +1,18 @@
 /// Import elements of the Game itself.
 pub mod game;
 
+use std::sync::Arc;
+
 use bevy::{
     ecs::{component::Component, system::Resource},
     math::Vec2,
 };
 use bevy_rapier2d::prelude::{CollisionGroups, Group};
+use quinn::{
+    rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer},
+    Endpoint, ServerConfig,
+};
 use rand::{rngs::SmallRng, SeedableRng};
-use tokio::net::{TcpStream, ToSocketAddrs};
 
 #[derive(Component, Clone)]
 /// A MapElement instnace is an object which is a part of the map.
@@ -29,18 +34,27 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct ServerConnection {
-    pub tcp_stream: Option<TcpStream>,
+    pub connection_handle: quinn::Endpoint,
 }
 
 impl ServerConnection {
-    pub async fn connect_to_address(addr: impl ToSocketAddrs) -> anyhow::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr).await?;
+    pub async fn create_server(
+        addr: String,
+    ) -> anyhow::Result<(Self, CertificateDer<'static>)> {
+        let address = addr.parse()?;
 
-        Ok(Self {
-            tcp_stream: Some(tcp_stream),
-        })
+        let (config, cert) = configure_server()?;
+
+        let quic_endpoint = Endpoint::server(config, address)?;
+
+        Ok((
+            Self {
+                connection_handle: quic_endpoint,
+            },
+            cert,
+        ))
     }
 }
 
@@ -52,6 +66,8 @@ pub struct ApplicationCtx {
     /// Startup initalized [`SmallRng`] random generator.
     /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
     pub rand: rand::rngs::SmallRng,
+
+    pub server_connection: Option<ServerConnection>,
 }
 
 impl Default for ApplicationCtx {
@@ -59,6 +75,7 @@ impl Default for ApplicationCtx {
         Self {
             ui_state: UiState::MainMenu,
             rand: SmallRng::from_rng(&mut rand::rng()),
+            server_connection: None,
         }
     }
 }
@@ -74,7 +91,6 @@ pub enum UiState {
 #[repr(u32)]
 enum CollisionGroup {
     MapObject = 0b0001,
-    SelfCharacter = 0b0010,
     ForeignCharacter = 0b0100,
     AttackObj = 0b1000,
 }
@@ -83,8 +99,6 @@ enum CollisionGroup {
 pub struct CollisionGroupSet {
     /// Collides with all
     pub map_object: CollisionGroups,
-    /// Only collides with MapObject & itself
-    pub local_player: CollisionGroups,
     /// Collides with everything except SelfCharacter
     pub player: CollisionGroups,
     /// Collides with MapObject & ForeignCharacter, not SelfCharacter
@@ -104,14 +118,6 @@ impl CollisionGroupSet {
                 Group::from_bits_truncate(CollisionGroup::MapObject as u32),
                 Group::from_bits_truncate(0b1111),
             ),
-            local_player: CollisionGroups::new(
-                Group::from_bits_truncate(CollisionGroup::SelfCharacter as u32),
-                Group::from_bits_truncate(
-                    CollisionGroup::MapObject as u32
-                        | CollisionGroup::SelfCharacter as u32
-                        | CollisionGroup::ForeignCharacter as u32,
-                ),
-            ),
             player: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::ForeignCharacter as u32),
                 Group::from_bits_truncate(0b1111),
@@ -124,4 +130,21 @@ impl CollisionGroupSet {
             ),
         }
     }
+}
+
+pub fn configure_server() -> anyhow::Result<(ServerConfig, CertificateDer<'static>)> {
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+
+    let cert_der = CertificateDer::from(cert.cert);
+
+    let priv_key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+
+    let mut server_config =
+        ServerConfig::with_single_cert(vec![cert_der.clone()], priv_key.into())?;
+
+    let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
+
+    transport_config.max_concurrent_uni_streams(0_u8.into());
+
+    Ok((server_config, cert_der))
 }

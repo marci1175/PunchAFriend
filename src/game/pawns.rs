@@ -17,49 +17,10 @@ use crate::{ApplicationCtx, CollisionGroupSet, Direction};
 
 use super::combat::{spawn_attack, Combo, Effect, EffectType};
 
-#[derive(Component, Clone)]
-pub struct LocalPlayer {
-    pub name: String,
-    pub jumps_remaining: u8,
-    pub direction: Direction,
-    pub player: Player,
-    pub combo_stats: Option<Combo>,
-}
-
-impl Default for LocalPlayer {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            jumps_remaining: 2,
-            direction: Direction::default(),
-            player: Player::default(),
-            combo_stats: None,
-        }
-    }
-}
-
-impl LocalPlayer {
-    pub fn new(
-        name: String,
-        jumps_remaining: u8,
-        direction: Direction,
-        player: Player,
-        combo_counter: Option<Combo>,
-    ) -> Self {
-        Self {
-            name,
-            jumps_remaining,
-            direction,
-            player,
-            combo_stats: combo_counter,
-        }
-    }
-}
-
 /// This function modifies the direction variable of the `LocalPlayer`, the variable is always the key last pressed by the user.
 pub fn set_movement_direction_var(
     keyboard_input: &ButtonInput<KeyCode>,
-    local_player: &mut Mut<'_, LocalPlayer>,
+    local_player: &mut Mut<'_, Player>,
 ) {
     if keyboard_input.just_pressed(KeyCode::KeyD) {
         // Update latest direction
@@ -78,20 +39,19 @@ pub fn set_movement_direction_var(
 }
 
 /// Handles the local player's input and modifying the controller of the Entity according to the input given.
-pub fn local_player_movement(
+pub fn player_movement(
     commands: &mut Commands<'_, '_>,
     keyboard_input: &ButtonInput<KeyCode>,
     time: &Res<'_, Time>,
     entity: Entity,
-    local_player: &mut Mut<'_, LocalPlayer>,
+    player: &mut Mut<'_, Player>,
     mut controller: Mut<'_, KinematicCharacterController>,
 ) {
     let move_factor = 450. * {
-        if local_player.player.has_effect(EffectType::Slowdown) {
+        if player.has_effect(EffectType::Slowdown) {
             0.5
-        }
-        else {
-            1.    
+        } else {
+            1.
         }
     };
 
@@ -108,25 +68,25 @@ pub fn local_player_movement(
     // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
     // If there are no more jumps remaining the user needs to wait until they touch a MapObject again. This indicates they've landed.
     // If the user is holding W the entitiy should automaticly jump once on the ground.
-    if keyboard_input.just_pressed(KeyCode::KeyW) && local_player.jumps_remaining != 0
-        || keyboard_input.pressed(KeyCode::KeyW) && local_player.jumps_remaining == 2
+    if keyboard_input.just_pressed(KeyCode::KeyW) && player.jumps_remaining != 0
+        || keyboard_input.pressed(KeyCode::KeyW) && player.jumps_remaining == 2
     {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., 500.),
             angvel: 0.5,
         });
 
-        local_player.jumps_remaining -= 1;
+        player.jumps_remaining -= 1;
     }
 }
 
 /// Handles the local player's attack
-pub fn local_player_attack(
+pub fn player_attack(
     commands: Commands<'_, '_>,
     collision_groups: Res<'_, CollisionGroupSet>,
     app_ctx: ResMut<'_, ApplicationCtx>,
     entity: Entity,
-    local_player: &mut Mut<'_, LocalPlayer>,
+    local_player: &mut Mut<'_, Player>,
     transform: &Transform,
 ) {
     let (attack_collider_width, attack_collider_height) = (50., 50.);
@@ -168,10 +128,10 @@ pub fn local_player_attack(
     );
 }
 
-pub fn local_player_handle(
+pub fn player_handle(
     query: (
         Entity,
-        Mut<LocalPlayer>,
+        Mut<Player>,
         Mut<KinematicCharacterController>,
         &Transform,
     ),
@@ -182,21 +142,21 @@ pub fn local_player_handle(
     time: Res<Time>,
 ) {
     // Unpack the tuple created by the tuple
-    let (entity, mut local_player, controller, transform) = query;
+    let (entity, mut player, controller, transform) = query;
 
-    if !local_player.player.has_effect(EffectType::Stunned) {
+    if !player.has_effect(EffectType::Stunned) {
         // Handle the movement of the LocalPlayer
-        local_player_movement(
+        player_movement(
             &mut commands,
             &keyboard_input,
             &time,
             entity,
-            &mut local_player,
+            &mut player,
             controller,
         );
 
         // Set the variables for the LocalPlayer
-        set_movement_direction_var(&keyboard_input, &mut local_player);
+        set_movement_direction_var(&keyboard_input, &mut player);
 
         // For this key, it does not matter if its checked with `just_pressed()` or `pressed()`, so we can avoid double checking by just doing both under one check.
         if keyboard_input.just_pressed(KeyCode::KeyS) {
@@ -206,24 +166,24 @@ pub fn local_player_handle(
             });
 
             // Update latest direction
-            local_player.direction = Direction::Down;
+            player.direction = Direction::Down;
         }
     }
-    
+
     // if the player is attacking, handle the local player's attack
     if keyboard_input.just_pressed(KeyCode::Space) {
-        local_player_attack(
+        player_attack(
             commands,
             collision_groups,
             app_ctx,
             entity,
-            &mut local_player,
+            &mut player,
             transform,
         );
     }
 
     // Increment effects
-    local_player.player.tick_effects(time.delta());
+    player.tick_effects(time.delta());
 }
 
 #[derive(Component, Clone, Default)]
@@ -234,6 +194,11 @@ pub struct Player {
     /// The current effects the player has.
     /// When an effect has expired, it will automaticly be removed from this list.
     pub effects: Vec<Effect>,
+
+    pub name: String,
+    pub jumps_remaining: u8,
+    pub direction: Direction,
+    pub combo_stats: Option<Combo>,
 }
 
 impl Player {

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use bevy::{
     asset::Assets,
     core_pipeline::core_2d::Camera2d,
@@ -9,7 +7,6 @@ use bevy::{
         query::With,
         system::{Commands, Query, Res, ResMut},
     },
-    input::{keyboard::KeyCode, ButtonInput},
     math::vec2,
     render::mesh::Mesh,
     sprite::ColorMaterial,
@@ -20,16 +17,11 @@ use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
     EguiContexts,
 };
-use bevy_rapier2d::prelude::{
-    ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
-    LockedAxes, RigidBody, Velocity,
-};
-use server::{
+use bevy_rapier2d::prelude::{ActiveEvents, Collider, Velocity};
+use punchafriend::{
     game::{
-        combat::{AttackObject, AttackType, Combo},
-        pawns::{
-            local_player_handle, LocalPlayer, Player
-        },
+        combat::{AttackObject, AttackType},
+        pawns::Player,
     },
     ApplicationCtx, CollisionGroupSet, Direction, MapElement, UiState,
 };
@@ -49,88 +41,50 @@ pub fn setup(
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(collision_groups.map_object)
         .insert(MapElement);
-
-    // Create the SelfCharacter.
-    commands
-        .spawn(RigidBody::Dynamic)
-        .insert(Collider::ball(20.0))
-        .insert(Transform::from_xyz(0., 100., 0.))
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(AdditionalMassProperties::Mass(0.1))
-        .insert(KinematicCharacterController {
-            apply_impulse_to_dynamic_bodies: false,
-            ..Default::default()
-        })
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(collision_groups.local_player)
-        .insert(Ccd::enabled())
-        // We add the LocalPlayer bundle to the entity, so we can differentiate the entities to the one we control.
-        .insert(LocalPlayer::default());
-
-    // Create the ForeignCharacter, but only in debug mode.
-    #[cfg(debug_assertions)]
-    commands
-        .spawn(RigidBody::Dynamic)
-        .insert(Collider::ball(20.0))
-        .insert(Transform::from_xyz(0., 100., 0.))
-        .insert(AdditionalMassProperties::Mass(0.1))
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(collision_groups.player)
-        .insert(Ccd::enabled())
-        .insert(Velocity::default())
-        .insert(Player::default());
 }
 
 pub fn frame(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(
-        Entity,
-        &mut LocalPlayer,
-        &mut KinematicCharacterController,
-        &Transform,
-    )>,
-    mut app_ctx: ResMut<ApplicationCtx>,
+    app_ctx: ResMut<ApplicationCtx>,
     collision_groups: Res<CollisionGroupSet>,
     time: Res<Time>,
 ) {
-    let keyboard_input = keyboard_input.clone();
+    // let keyboard_input = keyboard_input.clone();
 
-    if keyboard_input.just_pressed(KeyCode::Escape) {
-        if app_ctx.ui_state == UiState::PauseWindow {
-            app_ctx.ui_state = UiState::Game;
-        } else {
-            app_ctx.ui_state = UiState::PauseWindow;
-        }
-    }
+    // if keyboard_input.just_pressed(KeyCode::Escape) {
+    //     if app_ctx.ui_state == UiState::PauseWindow {
+    //         app_ctx.ui_state = UiState::Game;
+    //     } else {
+    //         app_ctx.ui_state = UiState::PauseWindow;
+    //     }
+    // }
 
-    // If we the ui isnt in `Game` state, do not let the user interact with the game.
-    if app_ctx.ui_state != UiState::Game {
-        return;
-    }
+    // // If we the ui isnt in `Game` state, do not let the user interact with the game.
+    // if app_ctx.ui_state != UiState::Game {
+    //     return;
+    // }
 
-    if let Ok(query) = query.get_single_mut() {
-        local_player_handle(
-            query,
-            commands,
-            keyboard_input,
-            collision_groups,
-            app_ctx,
-            time,
-        );
-    }
+    // if let Ok(query) = query.get_single_mut() {
+    //     player_handle(
+    //         query,
+    //         commands,
+    //         keyboard_input,
+    //         collision_groups,
+    //         app_ctx,
+    //         time,
+    //     );
+    // }
 }
 
-pub fn reset_jump_remaining_for_local_player(
+pub fn reset_jump_remaining_for_player(
     collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    character_entity_query: Query<Entity, With<LocalPlayer>>,
-    mut local_player_query: Query<&mut LocalPlayer>,
+    character_entity_query: Query<Entity, With<Player>>,
+    mut local_player_query: Query<&mut Player>,
 ) {
-    if let Some(colliding_entity) = check_for_collision_with_map_and_selfcharacter(
+    if let Some(colliding_entity) = check_for_collision_with_map_and_player(
         collision_events,
         map_element_query,
         character_entity_query,
@@ -141,10 +95,10 @@ pub fn reset_jump_remaining_for_local_player(
     }
 }
 
-pub fn check_for_collision_with_map_and_selfcharacter(
+pub fn check_for_collision_with_map_and_player(
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    character_entity_query: Query<Entity, With<LocalPlayer>>,
+    player_entity_query: Query<Entity, With<Player>>,
 ) -> Option<Entity> {
     if let Some(collision) = collision_events.read().next() {
         match collision {
@@ -153,9 +107,9 @@ pub fn check_for_collision_with_map_and_selfcharacter(
                 entity2,
                 _collision_event_flags,
             ) => {
-                let entity1_p = character_entity_query.get(*entity);
+                let entity1_p = player_entity_query.get(*entity);
                 let entity1_m = map_element_query.get(*entity);
-                let entity2_p = character_entity_query.get(*entity2);
+                let entity2_p = player_entity_query.get(*entity2);
                 let entity2_m = map_element_query.get(*entity2);
 
                 // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
@@ -172,9 +126,9 @@ pub fn check_for_collision_with_map_and_selfcharacter(
                 entity2,
                 _collision_event_flags,
             ) => {
-                let entity1_p = character_entity_query.get(*entity);
+                let entity1_p = player_entity_query.get(*entity);
                 let entity1_m = map_element_query.get(*entity);
-                let entity2_p = character_entity_query.get(*entity2);
+                let entity2_p = player_entity_query.get(*entity2);
                 let entity2_m = map_element_query.get(*entity2);
 
                 // Check if entity1 is the player and entity2 is the map element or if entity2 is the player and entity1 is the map element
@@ -197,7 +151,6 @@ pub fn check_for_collision_with_attack_object(
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     foreign_character_query: Query<(Entity, &mut Player, &Transform, &Velocity)>,
     attack_object_query: Query<(Entity, &AttackObject)>,
-    mut local_player: Query<&mut LocalPlayer>,
 ) {
     for collision in collision_events.read() {
         match collision {
@@ -237,14 +190,14 @@ pub fn check_for_collision_with_attack_object(
                     };
 
                     // Increment the local player's combo counter and reset its timer
-                    if let Ok(mut local_player) = local_player.get_mut(attack_object.attack_by) {
-                        if let Some(combo_counter) = &mut local_player.combo_stats {
-                            combo_counter.combo_counter += 1;
-                            combo_counter.combo_timer.reset();
-                        } else {
-                            local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
-                        }
-                    }
+                    // if let Ok(mut local_player) = local_player.get_mut(attack_object.attack_by) {
+                    //     if let Some(combo_counter) = &mut local_player.combo_stats {
+                    //         combo_counter.combo_counter += 1;
+                    //         combo_counter.combo_timer.reset();
+                    //     } else {
+                    //         local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
+                    //     }
+                    // }
 
                     colliding_entity_commands.insert(Velocity {
                         linvel: vec2(
@@ -288,55 +241,16 @@ pub fn ui_system(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
-    mut local_player: Query<&mut LocalPlayer>,
+    // mut local_player: Query<&mut LocalPlayer>,
     time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
 
     match app_ctx.ui_state {
         // If there is a game currently playing we should display the HUD.
-        server::UiState::Game => {
-            let local_player = local_player.get_single_mut();
-
-            if let Ok(mut local_player) = local_player {
-                egui::Area::new("game_hud".into())
-                    .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-200., -50.))
-                    .interactable(false)
-                    .show(ctx, |ui| {
-                        ui.set_min_size(egui::vec2(250., 30.));
-                        ui.allocate_ui(ui.available_size(), |ui| {
-                            let combo_stats = &mut local_player.combo_stats;
-
-                            if let Some(combo_stats) = combo_stats {
-                                ui.label(
-                                    RichText::from(format!("Combo: {}", combo_stats.combo_counter))
-                                        .strong()
-                                        .size(20.),
-                                );
-                                ui.label(
-                                    RichText::from(format!(
-                                        "Time left: {:.2}s",
-                                        (combo_stats.combo_timer.duration().as_secs_f32()
-                                            - combo_stats.combo_timer.elapsed_secs())
-                                    ))
-                                    .strong()
-                                    .size(20.),
-                                );
-
-                                combo_stats.combo_timer.tick(time.delta());
-                            }
-
-                            if let Some(combo) = combo_stats.clone() {
-                                if combo.combo_timer.finished() {
-                                    *combo_stats = None;
-                                }
-                            }
-                        });
-                    });
-            }
-        }
+        punchafriend::UiState::Game => {}
         // Display main menu window.
-        server::UiState::MainMenu => {
+        punchafriend::UiState::MainMenu => {
             // Display main title.
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
@@ -370,7 +284,7 @@ pub fn ui_system(
                     });
                 });
         }
-        server::UiState::PauseWindow => {
+        punchafriend::UiState::PauseWindow => {
             // Paint the pause menu's backgound
             egui::Area::new("pause_window_background".into()).show(ctx, |ui| {
                 ui.painter()
