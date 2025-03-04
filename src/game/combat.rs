@@ -12,7 +12,7 @@ use rand::Rng;
 use std::time::Duration;
 use strum::EnumDiscriminants;
 
-use crate::{ApplicationCtx, CollisionGroupSet, Direction};
+use crate::{game::collision::CollisionGroupSet, server::ApplicationCtx, Direction};
 
 use super::pawns::Player;
 

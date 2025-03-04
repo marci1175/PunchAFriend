@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
 use quinn::{
@@ -7,28 +7,29 @@ use quinn::{
 };
 
 #[derive(Resource)]
-pub struct ServerConnection {
+pub struct ServerInstance {
     pub connection_handle: quinn::Endpoint,
 }
 
-impl ServerConnection {
-    pub async fn create_server(addr: String) -> anyhow::Result<(Self, CertificateDer<'static>)> {
-        let address = addr.parse()?;
-
+impl ServerInstance {
+    pub async fn create_server() -> anyhow::Result<(Self, CertificateDer<'static>, SocketAddr)> {
         let (config, cert) = configure_server()?;
 
-        let quic_endpoint = Endpoint::server(config, address)?;
+        let quic_endpoint = Endpoint::server(config, "[::]:0".parse()?)?;
+
+        let local_addr = quic_endpoint.local_addr()?;
 
         Ok((
             Self {
                 connection_handle: quic_endpoint,
             },
             cert,
+            local_addr,
         ))
     }
 }
 
-pub fn configure_server() -> anyhow::Result<(ServerConfig, CertificateDer<'static>)> {
+fn configure_server() -> anyhow::Result<(ServerConfig, CertificateDer<'static>)> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
 
     let cert_der = CertificateDer::from(cert.cert);

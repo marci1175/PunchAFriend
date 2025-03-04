@@ -1,13 +1,7 @@
 pub mod game;
 pub mod networking;
 
-use bevy::{
-    ecs::{component::Component, system::Resource},
-    math::Vec2,
-};
-use bevy_rapier2d::prelude::{CollisionGroups, Group};
-use networking::server::ServerConnection;
-use rand::{rngs::SmallRng, SeedableRng};
+use bevy::{ecs::component::Component, math::Vec2};
 
 #[derive(Component, Clone)]
 /// A MapElement instnace is an object which is a part of the map.
@@ -29,76 +23,95 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Resource)]
-pub struct ApplicationCtx {
-    /// The Ui's state in the Application.
-    pub ui_state: UiState,
-
-    /// Startup initalized [`SmallRng`] random generator.
-    /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
-    pub rand: rand::rngs::SmallRng,
-
-    pub server_connection: Option<ServerConnection>,
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum UiMode {
+    Game,
+    #[default]
+    MainMenu,
+    GameMenu,
+    PauseWindow,
 }
 
-impl Default for ApplicationCtx {
-    fn default() -> Self {
-        Self {
-            ui_state: UiState::MainMenu,
-            rand: SmallRng::from_rng(&mut rand::rng()),
-            server_connection: None,
+pub mod server {
+    use std::net::SocketAddr;
+
+    use bevy::ecs::system::Resource;
+    use quinn::rustls::pki_types::CertificateDer;
+    use rand::{rngs::SmallRng, SeedableRng};
+    use tokio::sync::mpsc::{channel, Receiver};
+
+    use crate::{networking::server::ServerInstance, UiMode};
+
+    #[derive(Resource)]
+    pub struct ApplicationCtx {
+        /// The Ui's state in the Application.
+        pub ui_state: UiMode,
+
+        /// Startup initalized [`SmallRng`] random generator.
+        /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
+        pub rand: rand::rngs::SmallRng,
+
+        pub server_instance_receiver:
+            Receiver<anyhow::Result<(ServerInstance, CertificateDer<'static>, SocketAddr)>>,
+
+        pub server_instance: Option<ServerInstance>,
+    }
+
+    impl Default for ApplicationCtx {
+        fn default() -> Self {
+            Self {
+                ui_state: UiMode::MainMenu,
+                rand: SmallRng::from_rng(&mut rand::rng()),
+                server_instance_receiver: channel(255).1,
+                server_instance: None,
+            }
         }
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum UiState {
-    Game,
-    #[default]
-    MainMenu,
-    PauseWindow,
-}
+mod client {
 
-#[repr(u32)]
-enum CollisionGroup {
-    MapObject = 0b0001,
-    ForeignCharacter = 0b0100,
-    AttackObj = 0b1000,
-}
+    use bevy::ecs::system::Resource;
 
-#[derive(Resource)]
-pub struct CollisionGroupSet {
-    /// Collides with all
-    pub map_object: CollisionGroups,
-    /// Collides with everything except SelfCharacter
-    pub player: CollisionGroups,
-    /// Collides with MapObject & ForeignCharacter, not SelfCharacter
-    pub attack_obj: CollisionGroups,
-}
+    use egui_toast::Toasts;
 
-impl Default for CollisionGroupSet {
-    fn default() -> Self {
-        Self::new()
+    use rand::{rngs::SmallRng, SeedableRng};
+    use tokio::sync::mpsc::{channel, Receiver};
+
+    use crate::{networking::client::ClientConnection, UiMode};
+
+    #[derive(Resource)]
+    pub struct ApplicationCtx {
+        /// The Ui's mode in the Application.
+        pub ui_mode: UiMode,
+
+        /// The Ui's state in the Application,
+        pub ui_state: UiMode,
+
+        /// Startup initalized [`SmallRng`] random generator.
+        /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
+        pub rand: rand::rngs::SmallRng,
+
+        /// The Client's currently ongoing connection to a remote address.
+        pub client_connection: Option<ClientConnection>,
+
+        /// Receives the connecting threads connection result.
+        pub connection_receiver: Receiver<anyhow::Result<ClientConnection>>,
+
+        /// Used to display notifications with egui
+        pub egui_toasts: Toasts,
     }
-}
 
-impl CollisionGroupSet {
-    pub fn new() -> Self {
-        Self {
-            map_object: CollisionGroups::new(
-                Group::from_bits_truncate(CollisionGroup::MapObject as u32),
-                Group::from_bits_truncate(0b1111),
-            ),
-            player: CollisionGroups::new(
-                Group::from_bits_truncate(CollisionGroup::ForeignCharacter as u32),
-                Group::from_bits_truncate(0b1111),
-            ),
-            attack_obj: CollisionGroups::new(
-                Group::from_bits_truncate(CollisionGroup::AttackObj as u32),
-                Group::from_bits_truncate(
-                    CollisionGroup::MapObject as u32 | CollisionGroup::ForeignCharacter as u32,
-                ),
-            ),
+    impl Default for ApplicationCtx {
+        fn default() -> Self {
+            Self {
+                ui_mode: UiMode::MainMenu,
+                ui_state: UiMode::default(),
+                client_connection: None,
+                rand: SmallRng::from_rng(&mut rand::rng()),
+                connection_receiver: channel(255).1,
+                egui_toasts: Toasts::new(),
+            }
         }
     }
 }

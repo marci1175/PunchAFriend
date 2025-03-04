@@ -24,6 +24,7 @@ impl ClientConnection {
 
         // Create the new Certificate variable
         let mut certs = rustls::RootCertStore::empty();
+
         certs.add(certificate)?;
 
         quic_stream

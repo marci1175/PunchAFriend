@@ -41,6 +41,19 @@ pub struct ApplicationCtx {
     pub egui_toasts: Toasts,
 }
 
+impl Default for ApplicationCtx {
+    fn default() -> Self {
+        Self {
+            ui_mode: UiMode::MainMenu,
+            ui_state: UiState::default(),
+            client_connection: None,
+            rand: SmallRng::from_rng(&mut rand::rng()),
+            connection_receiver: channel(255).1,
+            egui_toasts: Toasts::new(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum UiMode {
     Game,
@@ -53,19 +66,6 @@ pub enum UiMode {
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
     connect_to_address: String,
-}
-
-impl Default for ApplicationCtx {
-    fn default() -> Self {
-        Self {
-            ui_mode: UiMode::MainMenu,
-            ui_state: UiState::default(),
-            client_connection: None,
-            rand: SmallRng::from_rng(&mut rand::rng()),
-            connection_receiver: channel(255).1,
-            egui_toasts: Toasts::new(),
-        }
-    }
 }
 
 pub fn ui_system(

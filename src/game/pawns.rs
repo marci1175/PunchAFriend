@@ -1,3 +1,4 @@
+use crate::{game::collision::CollisionGroupSet, server::ApplicationCtx, Direction};
 use bevy::{
     ecs::{
         component::Component,
@@ -12,8 +13,6 @@ use bevy::{
 };
 use bevy_rapier2d::prelude::{Collider, KinematicCharacterController, Velocity};
 use std::time::Duration;
-
-use crate::{ApplicationCtx, CollisionGroupSet, Direction};
 
 use super::combat::{spawn_attack, Combo, Effect, EffectType};
 

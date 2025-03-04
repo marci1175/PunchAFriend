@@ -1,0 +1,130 @@
+use std::net::SocketAddr;
+
+use bevy::{
+    asset::Assets,
+    ecs::system::{Commands, Res, ResMut},
+    render::mesh::Mesh,
+    sprite::ColorMaterial,
+    time::Time,
+};
+use bevy_egui::{
+    egui::{self, Align2, Color32, Layout, RichText},
+    EguiContexts,
+};
+use bevy_tokio_tasks::TokioTasksRuntime;
+use punchafriend::{
+    game::collision::CollisionGroupSet, networking::server::ServerInstance, server::ApplicationCtx,
+    UiMode,
+};
+use quinn::rustls::pki_types::CertificateDer;
+use tokio::sync::mpsc::channel;
+
+use crate::systems::setup;
+
+pub fn ui_system(
+    mut contexts: EguiContexts,
+    mut app_ctx: ResMut<ApplicationCtx>,
+    commands: Commands,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    collision_groups: Res<CollisionGroupSet>,
+    // mut local_player: Query<&mut LocalPlayer>,
+    runtime: ResMut<TokioTasksRuntime>,
+    time: Res<Time>,
+) {
+    let ctx = contexts.ctx_mut();
+
+    match app_ctx.ui_state {
+        // If there is a game currently playing we should display the HUD.
+        punchafriend::UiMode::Game => {}
+        // Display main menu window.
+        punchafriend::UiMode::MainMenu => {
+            // Display main title.
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::from("Punch A Friend!").size(50.));
+                });
+            });
+
+            // Display the main menu options.
+            egui::TopBottomPanel::bottom("main_menu_options")
+                .show_separator_line(false)
+                .show(ctx, |ui| {
+                    ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
+                        ui.add(egui::Button::new(RichText::from("Mods").size(25.)).frame(false));
+                        ui.add(egui::Button::new(RichText::from("Options").size(25.)).frame(false));
+
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::from("Play").size(40.))
+                                    .fill(Color32::TRANSPARENT),
+                            )
+                            .clicked()
+                        {
+                            // Set ui state
+                            app_ctx.ui_state = UiMode::Game;
+
+                            // Create a new pair of channels
+                            let (sender, receiver) = channel::<
+                                anyhow::Result<(
+                                    ServerInstance,
+                                    CertificateDer<'static>,
+                                    SocketAddr,
+                                )>,
+                            >(255);
+
+                            // Set the receiver so that it will receive the new instnace from the async task
+                            app_ctx.server_instance_receiver = receiver;
+
+                            // Spawn a new async task
+                            runtime.spawn_background_task(|_ctx| async move {
+                                // Create a new ServerInstance
+                                let connection_result = ServerInstance::create_server().await;
+
+                                // Send the new instance through the channel
+                                sender.send(connection_result).await.unwrap();
+                            });
+
+                            // Initalize the server
+                            // app_ctx.server_connection = Some();
+
+                            // Initalize game
+                            setup(commands, meshes, materials, collision_groups);
+                        };
+
+                        ui.add_space(50.);
+                    });
+                });
+        }
+        punchafriend::UiMode::PauseWindow => {
+            // Paint the pause menu's backgound
+            egui::Area::new("pause_window_background".into()).show(ctx, |ui| {
+                ui.painter()
+                    .rect_filled(ctx.screen_rect(), 0., Color32::from_black_alpha(200));
+            });
+
+            // If the player pauses their game whilst in a game we should display the pause menu.
+            egui::Window::new("pause_window")
+                .title_bar(false)
+                .resizable(false)
+                .collapsible(false)
+                .anchor(Align2::CENTER_CENTER, egui::vec2(0., 0.))
+                .fixed_size(ctx.screen_rect().size() / 3.)
+                .show(ctx, |ui| {
+                    ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
+                        ui.add(egui::Button::new("Resume").frame(false));
+                        ui.add(egui::Button::new("Options").frame(false));
+                        ui.add(egui::Button::new("Quit").frame(false));
+                    });
+                });
+        }
+        punchafriend::UiMode::GameMenu => {}
+    }
+
+    if let Ok(server_instance) = app_ctx.server_instance_receiver.try_recv() {
+        match server_instance {
+            Ok((server_instance, certificate, socket_addr)) => {}
+            Err(err) => {}
+        }
+    }
+}
