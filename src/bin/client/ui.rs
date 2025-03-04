@@ -14,54 +14,9 @@ use bevy_egui::{
 use bevy_tokio_tasks::TokioTasksRuntime;
 use egui_toast::{Toast, ToastOptions, Toasts};
 use quinn::rustls::pki_types::CertificateDer;
-use rand::{rngs::SmallRng, SeedableRng};
 use tokio::sync::mpsc::{channel, Receiver};
 
-use punchafriend::{game::pawns::Player, networking::client::ClientConnection};
-
-#[derive(Resource)]
-pub struct ApplicationCtx {
-    /// The Ui's mode in the Application.
-    pub ui_mode: UiMode,
-
-    /// The Ui's state in the Application,
-    pub ui_state: UiState,
-
-    /// Startup initalized [`SmallRng`] random generator.
-    /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
-    pub rand: rand::rngs::SmallRng,
-
-    /// The Client's currently ongoing connection to a remote address.
-    pub client_connection: Option<ClientConnection>,
-
-    /// Receives the connecting threads connection result.
-    pub connection_receiver: Receiver<anyhow::Result<ClientConnection>>,
-
-    /// Used to display notifications with egui
-    pub egui_toasts: Toasts,
-}
-
-impl Default for ApplicationCtx {
-    fn default() -> Self {
-        Self {
-            ui_mode: UiMode::MainMenu,
-            ui_state: UiState::default(),
-            client_connection: None,
-            rand: SmallRng::from_rng(&mut rand::rng()),
-            connection_receiver: channel(255).1,
-            egui_toasts: Toasts::new(),
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum UiMode {
-    Game,
-    #[default]
-    MainMenu,
-    GameMenu,
-    PauseWindow,
-}
+use punchafriend::{client::ApplicationCtx, game::pawns::Player, networking::client::ClientConnection, UiMode};
 
 #[derive(Debug, Clone, Default)]
 pub struct UiState {

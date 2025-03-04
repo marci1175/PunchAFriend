@@ -24,7 +24,7 @@ use punchafriend::{
     Direction, MapElement,
 };
 
-pub fn setup(
+pub fn setup_game(
     mut commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,

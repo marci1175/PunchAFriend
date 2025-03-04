@@ -5,7 +5,8 @@ use bevy::{
     DefaultPlugins,
 };
 use bevy_egui::EguiPlugin;
-use ui::{ui_system, ApplicationCtx};
+use ui::ui_system;
+use punchafriend::client::ApplicationCtx;
 
 fn main() {
     let mut app = App::new();

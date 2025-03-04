@@ -12,6 +12,7 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{Collider, KinematicCharacterController, Velocity};
+use uuid::Uuid;
 use std::time::Duration;
 
 use super::combat::{spawn_attack, Combo, Effect, EffectType};
@@ -198,6 +199,8 @@ pub struct Player {
     pub jumps_remaining: u8,
     pub direction: Direction,
     pub combo_stats: Option<Combo>,
+
+    pub id: Uuid,
 }
 
 impl Player {

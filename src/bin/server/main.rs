@@ -9,8 +9,7 @@ use bevy_rapier2d::{
 };
 use punchafriend::{game::collision::CollisionGroupSet, server::ApplicationCtx};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let mut app = App::new();
 
     app.add_plugins(DefaultPlugins);

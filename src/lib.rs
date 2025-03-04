@@ -33,43 +33,59 @@ pub enum UiMode {
 }
 
 pub mod server {
-    use std::net::SocketAddr;
+    use std::{net::SocketAddr, sync::Arc};
 
     use bevy::ecs::system::Resource;
+    use parking_lot::RwLock;
     use quinn::rustls::pki_types::CertificateDer;
     use rand::{rngs::SmallRng, SeedableRng};
     use tokio::sync::mpsc::{channel, Receiver};
+    use tokio_util::sync::CancellationToken;
 
-    use crate::{networking::server::ServerInstance, UiMode};
+    use crate::{networking::server::{RemoteClient, ServerInstance}, UiMode};
+
+    #[derive(Default)]
+    pub struct UiState {
+        
+    }
 
     #[derive(Resource)]
     pub struct ApplicationCtx {
         /// The Ui's state in the Application.
-        pub ui_state: UiMode,
+        pub ui_mode: UiMode,
+
+        pub ui_state: UiState,
 
         /// Startup initalized [`SmallRng`] random generator.
         /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
         pub rand: rand::rngs::SmallRng,
 
         pub server_instance_receiver:
-            Receiver<anyhow::Result<(ServerInstance, CertificateDer<'static>, SocketAddr)>>,
+            Receiver<anyhow::Result<ServerInstance>>,
 
         pub server_instance: Option<ServerInstance>,
+
+        pub cancellation_token: CancellationToken,
+
+        pub client_list: Arc<RwLock<Vec<RemoteClient>>>,
     }
 
     impl Default for ApplicationCtx {
         fn default() -> Self {
             Self {
-                ui_state: UiMode::MainMenu,
+                ui_mode: UiMode::MainMenu,
+                ui_state: UiState::default(),
                 rand: SmallRng::from_rng(&mut rand::rng()),
                 server_instance_receiver: channel(255).1,
                 server_instance: None,
+                cancellation_token: CancellationToken::new(),
+                client_list: Arc::new(RwLock::new(vec![])),
             }
         }
     }
 }
 
-mod client {
+pub mod client {
 
     use bevy::ecs::system::Resource;
 
@@ -80,13 +96,18 @@ mod client {
 
     use crate::{networking::client::ClientConnection, UiMode};
 
+    #[derive(Default)]
+    pub struct UiState {
+        pub connect_to_address: String,
+    }
+
     #[derive(Resource)]
     pub struct ApplicationCtx {
         /// The Ui's mode in the Application.
         pub ui_mode: UiMode,
 
         /// The Ui's state in the Application,
-        pub ui_state: UiMode,
+        pub ui_state: UiState,
 
         /// Startup initalized [`SmallRng`] random generator.
         /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
@@ -106,7 +127,7 @@ mod client {
         fn default() -> Self {
             Self {
                 ui_mode: UiMode::MainMenu,
-                ui_state: UiMode::default(),
+                ui_state: UiState::default(),
                 client_connection: None,
                 rand: SmallRng::from_rng(&mut rand::rng()),
                 connection_receiver: channel(255).1,
@@ -114,4 +135,9 @@ mod client {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum GameAction {
+
 }

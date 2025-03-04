@@ -13,13 +13,12 @@ use bevy_egui::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
-    game::collision::CollisionGroupSet, networking::server::ServerInstance, server::ApplicationCtx,
+    game::collision::CollisionGroupSet, networking::server::{self, setup_remote_client, ServerInstance}, server::ApplicationCtx,
     UiMode,
 };
-use quinn::rustls::pki_types::CertificateDer;
 use tokio::sync::mpsc::channel;
 
-use crate::systems::setup;
+use crate::systems::setup_game;
 
 pub fn ui_system(
     mut contexts: EguiContexts,
@@ -34,7 +33,7 @@ pub fn ui_system(
 ) {
     let ctx = contexts.ctx_mut();
 
-    match app_ctx.ui_state {
+    match app_ctx.ui_mode {
         // If there is a game currently playing we should display the HUD.
         punchafriend::UiMode::Game => {}
         // Display main menu window.
@@ -62,15 +61,11 @@ pub fn ui_system(
                             .clicked()
                         {
                             // Set ui state
-                            app_ctx.ui_state = UiMode::Game;
+                            app_ctx.ui_mode = UiMode::Game;
 
                             // Create a new pair of channels
                             let (sender, receiver) = channel::<
-                                anyhow::Result<(
-                                    ServerInstance,
-                                    CertificateDer<'static>,
-                                    SocketAddr,
-                                )>,
+                                anyhow::Result<ServerInstance>,
                             >(255);
 
                             // Set the receiver so that it will receive the new instnace from the async task
@@ -84,12 +79,6 @@ pub fn ui_system(
                                 // Send the new instance through the channel
                                 sender.send(connection_result).await.unwrap();
                             });
-
-                            // Initalize the server
-                            // app_ctx.server_connection = Some();
-
-                            // Initalize game
-                            setup(commands, meshes, materials, collision_groups);
                         };
 
                         ui.add_space(50.);
@@ -121,9 +110,21 @@ pub fn ui_system(
         punchafriend::UiMode::GameMenu => {}
     }
 
+    if app_ctx.server_instance.is_some() {
+        return;
+    }
+
     if let Ok(server_instance) = app_ctx.server_instance_receiver.try_recv() {
         match server_instance {
-            Ok((server_instance, certificate, socket_addr)) => {}
+            Ok(server_instance) => {
+                app_ctx.server_instance = Some(server_instance.clone());
+
+                // Initalize game
+                setup_game(commands, meshes, materials, collision_groups);
+
+                // Initalize server threads
+                setup_remote_client(server_instance, runtime, app_ctx.cancellation_token.clone());
+            }
             Err(err) => {}
         }
     }
