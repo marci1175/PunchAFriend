@@ -1,22 +1,34 @@
 use std::time::Duration;
 
 use bevy::{
+    asset::Assets,
+    core_pipeline::core_2d::Camera2d,
     ecs::{
         entity::Entity,
-        system::{Query, Res, ResMut, Resource},
+        system::{Commands, Query, Res, ResMut},
     },
+    input::{keyboard::KeyCode, ButtonInput},
+    render::mesh::Mesh,
+    sprite::ColorMaterial,
     time::Time,
+    transform::components::Transform,
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
     EguiContexts,
 };
+use bevy_rapier2d::prelude::{
+    ActiveEvents, AdditionalMassProperties, Ccd, Collider, LockedAxes, RigidBody, Velocity,
+};
 use bevy_tokio_tasks::TokioTasksRuntime;
-use egui_toast::{Toast, ToastOptions, Toasts};
-use quinn::rustls::pki_types::CertificateDer;
-use tokio::sync::mpsc::{channel, Receiver};
+use egui_toast::{Toast, ToastOptions};
 
-use punchafriend::{client::ApplicationCtx, game::pawns::Player, networking::client::ClientConnection, UiMode};
+use punchafriend::{
+    client::ApplicationCtx,
+    game::{collision::CollisionGroupSet, pawns::Player},
+    networking::client::ClientConnection,
+    MapElement, UiMode,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
@@ -27,8 +39,13 @@ pub fn ui_system(
     mut context: EguiContexts,
     mut app_ctx: ResMut<ApplicationCtx>,
     runtime: ResMut<TokioTasksRuntime>,
-    mut local_player: Query<(Entity, &mut Player)>,
+    mut players: Query<(Entity, &mut Player, &mut Transform)>,
     time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    collision_groups: Res<CollisionGroupSet>,
 ) {
     // Get context
     let ctx = context.ctx_mut();
@@ -38,43 +55,30 @@ pub fn ui_system(
 
     match app_ctx.ui_mode {
         UiMode::Game => {
-            let local_player = local_player.get_single_mut();
+            // Send the inputs to the sender thread
+            if let Some(client_connection) = &app_ctx.client_connection {
+                if keyboard_input.just_pressed(KeyCode::Space) {
+                    if let Err(err) = client_connection
+                        .sender_thread_handle
+                        .try_send(punchafriend::GameInput::Jump)
+                    {
+                        app_ctx.egui_toasts.add(
+                            Toast::new()
+                                .kind(egui_toast::ToastKind::Error)
+                                .text(format!(
+                                    "Sending to endpoint handler thread failed: {}",
+                                    err
+                                ))
+                                .options(
+                                    ToastOptions::default()
+                                        .duration(Some(Duration::from_secs(3)))
+                                        .show_progress(true),
+                                ),
+                        );
 
-            if let Ok((entity, mut local_player)) = local_player {
-                egui::Area::new("game_hud".into())
-                    .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-200., -50.))
-                    .interactable(false)
-                    .show(ctx, |ui| {
-                        ui.set_min_size(egui::vec2(250., 30.));
-                        ui.allocate_ui(ui.available_size(), |ui| {
-                            let combo_stats = &mut local_player.combo_stats;
-
-                            if let Some(combo_stats) = combo_stats {
-                                ui.label(
-                                    RichText::from(format!("Combo: {}", combo_stats.combo_counter))
-                                        .strong()
-                                        .size(20.),
-                                );
-                                ui.label(
-                                    RichText::from(format!(
-                                        "Time left: {:.2}s",
-                                        (combo_stats.combo_timer.duration().as_secs_f32()
-                                            - combo_stats.combo_timer.elapsed_secs())
-                                    ))
-                                    .strong()
-                                    .size(20.),
-                                );
-
-                                combo_stats.combo_timer.tick(time.delta());
-                            }
-
-                            if let Some(combo) = combo_stats.clone() {
-                                if combo.combo_timer.finished() {
-                                    *combo_stats = None;
-                                }
-                            }
-                        });
-                    });
+                        app_ctx.ui_mode = UiMode::PauseWindow;
+                    }
+                }
             }
         }
         UiMode::MainMenu => {
@@ -123,20 +127,18 @@ pub fn ui_system(
                         // Clone the address so it can be moved.
                         let address = app_ctx.ui_state.connect_to_address.clone();
 
-                        // Create a new channel pair
-                        let (sender, receiver) = channel::<anyhow::Result<ClientConnection>>(255);
+                        // Move the sender
+                        let sender = app_ctx.connection_sender.clone();
 
                         // Set the channel
-                        app_ctx.connection_receiver = receiver;
+                        let cancellation_token = app_ctx.cancellation_token.clone();
 
                         // Create the connecting thread
                         runtime.spawn_background_task(|_ctx| async move {
                             // Attempt to make a connection to the remote address.
-                            let client_connection = ClientConnection::connect_to_address(
-                                address,
-                                CertificateDer::from_slice(&[]),
-                            )
-                            .await;
+                            let client_connection =
+                                ClientConnection::connect_to_address(address, cancellation_token)
+                                    .await;
 
                             // Send it to the front end no matter the end result.
                             sender.send(client_connection).await.unwrap();
@@ -169,28 +171,74 @@ pub fn ui_system(
         }
     }
 
-    // Try receiving the incoming successful connection to the remote address.
-    if let Ok(connection) = app_ctx.connection_receiver.try_recv() {
-        match connection {
-            Ok(valid_connection) => {
-                // Set the client connection variable
-                app_ctx.client_connection = Some(valid_connection);
+    if let Some(client_connection) = &mut app_ctx.client_connection {
+        if let Ok(server_tick_update) = client_connection.main_thread_handle.try_recv() {
+            if !players.iter_mut().any(|(_e, mut player, mut transfrom)| {
+                let player_found = player.id == server_tick_update.player.id.clone();
 
-                // Set the window to be game
-                app_ctx.ui_mode = UiMode::Game;
+                if player_found {
+                    *player = server_tick_update.player.clone();
+                    *transfrom = server_tick_update.transfrom.clone();
+                }
+
+                player_found
+            }) {
+                commands
+                    .spawn(RigidBody::Dynamic)
+                    .insert(Collider::ball(20.0))
+                    .insert(server_tick_update.transfrom)
+                    .insert(AdditionalMassProperties::Mass(0.1))
+                    .insert(ActiveEvents::COLLISION_EVENTS)
+                    .insert(LockedAxes::ROTATION_LOCKED)
+                    .insert(collision_groups.player)
+                    .insert(Ccd::enabled())
+                    .insert(Velocity::default())
+                    .insert(server_tick_update.player);
             }
-            Err(error) => {
-                app_ctx.egui_toasts.add(
-                    Toast::new()
-                        .kind(egui_toast::ToastKind::Error)
-                        .text(format!("Connection Failed: {}", error))
-                        .options(
-                            ToastOptions::default()
-                                .duration(Some(Duration::from_secs(3)))
-                                .show_progress(true),
-                        ),
-                );
+        }
+    } else {
+        // Try receiving the incoming successful connection to the remote address.
+        if let Ok(connection) = app_ctx.connection_receiver.try_recv() {
+            match connection {
+                Ok(client_connection) => {
+                    // Set the window to be displaying game
+                    app_ctx.ui_mode = UiMode::Game;
+
+                    // Set the client connection variable
+                    app_ctx.client_connection = Some(client_connection);
+
+                    setup_game(commands, meshes, materials, &collision_groups);
+                }
+                Err(error) => {
+                    app_ctx.egui_toasts.add(
+                        Toast::new()
+                            .kind(egui_toast::ToastKind::Error)
+                            .text(format!("Connection Failed: {}", error))
+                            .options(
+                                ToastOptions::default()
+                                    .duration(Some(Duration::from_secs(3)))
+                                    .show_progress(true),
+                            ),
+                    );
+                }
             }
         }
     }
+}
+
+pub fn setup_game(
+    mut commands: Commands,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    collision_groups: &CollisionGroupSet,
+) {
+    // Setup graphics
+    commands.spawn(Camera2d);
+
+    commands
+        .spawn(Collider::cuboid(500.0, 10.0))
+        .insert(Transform::from_xyz(0.0, -200.0, 0.0))
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(collision_groups.map_object)
+        .insert(MapElement);
 }

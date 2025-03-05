@@ -1,7 +1,7 @@
 mod systems;
 mod ui;
 
-use bevy::prelude::*;
+use bevy::{log::LogPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
 use bevy_rapier2d::{
     plugin::{NoUserData, RapierPhysicsPlugin},
@@ -12,10 +12,14 @@ use punchafriend::{game::collision::CollisionGroupSet, server::ApplicationCtx};
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins(DefaultPlugins.build().add(LogPlugin {
+        filter: "info,wgpu_core=warn,wgpu_hal=off".into(),
+        level: bevy::log::Level::DEBUG,
+        ..Default::default()
+    }));
     app.add_plugins(EguiPlugin);
-    app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0));
     app.add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default());
+    app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0));
     app.add_plugins(RapierDebugRenderPlugin::default());
 
     app.insert_resource(ApplicationCtx::default());

@@ -14,21 +14,24 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{ActiveEvents, Collider, Velocity};
+use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
-    game::collision::CollisionGroupSet,
     game::{
+        collision::CollisionGroupSet,
         combat::{AttackObject, AttackType},
         pawns::Player,
     },
+    networking::ServerTickUpdate,
     server::ApplicationCtx,
     Direction, MapElement,
 };
+use tokio::io::AsyncWriteExt;
 
 pub fn setup_game(
     mut commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
-    collision_groups: Res<CollisionGroupSet>,
+    collision_groups: &CollisionGroupSet,
 ) {
     // Setup graphics
     commands.spawn(Camera2d);
@@ -47,33 +50,42 @@ pub fn tick(
     materials: ResMut<Assets<ColorMaterial>>,
     app_ctx: ResMut<ApplicationCtx>,
     collision_groups: Res<CollisionGroupSet>,
+    players: Query<(Entity, &Player, &Transform)>,
     time: Res<Time>,
+    runtime: Res<TokioTasksRuntime>,
 ) {
-    // let keyboard_input = keyboard_input.clone();
+    for (_entity, player, transform) in players.iter() {
+        if let Some(server_instance) = &app_ctx.server_instance {
+            let clients = server_instance.connected_client.write();
 
-    // if keyboard_input.just_pressed(KeyCode::Escape) {
-    //     if app_ctx.ui_state == UiState::PauseWindow {
-    //         app_ctx.ui_state = UiState::Game;
-    //     } else {
-    //         app_ctx.ui_state = UiState::PauseWindow;
-    //     }
-    // }
+            let server_tick_update = ServerTickUpdate::new(*transform, player.clone());
 
-    // // If we the ui isnt in `Game` state, do not let the user interact with the game.
-    // if app_ctx.ui_state != UiState::Game {
-    //     return;
-    // }
+            let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
+            let message_length_bytes = (message_bytes.len() as u32).to_be_bytes();
 
-    // if let Ok(query) = query.get_single_mut() {
-    //     player_handle(
-    //         query,
-    //         commands,
-    //         keyboard_input,
-    //         collision_groups,
-    //         app_ctx,
-    //         time,
-    //     );
-    // }
+            for client in clients.iter() {
+                let message_bytes = message_bytes.clone();
+                let message_length_bytes = message_length_bytes.clone();
+
+                let client = client.clone();
+
+                runtime.spawn_background_task(move |_ctx| async move {
+                    client
+                        .send_stream_handle
+                        .lock()
+                        .write_all(&message_length_bytes)
+                        .await
+                        .unwrap();
+                    client
+                        .send_stream_handle
+                        .lock()
+                        .write_all(&message_bytes)
+                        .await
+                        .unwrap();
+                });
+            }
+        }
+    }
 }
 
 pub fn reset_jump_remaining_for_player(

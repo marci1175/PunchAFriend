@@ -16,7 +16,7 @@ use crate::{game::collision::CollisionGroupSet, server::ApplicationCtx, Directio
 
 use super::pawns::Player;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Combo {
     pub combo_counter: u32,
     pub combo_timer: Timer,
@@ -73,7 +73,7 @@ pub enum AttackType {
     Quick,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
 /// A special effect, which can affect any [`Player`]s and subsets of the instnace.
 /// These effects influence the players ability to perform in the game.
 pub struct Effect {
@@ -92,7 +92,9 @@ impl Effect {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, EnumDiscriminants)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, EnumDiscriminants, serde::Deserialize, serde::Serialize,
+)]
 pub enum EffectType {
     Slowdown,
     Stunned,

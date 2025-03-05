@@ -8,7 +8,7 @@ pub enum CollisionGroup {
     AttackObj = 0b1000,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct CollisionGroupSet {
     /// Collides with all
     pub map_object: CollisionGroups,

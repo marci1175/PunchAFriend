@@ -12,8 +12,8 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{Collider, KinematicCharacterController, Velocity};
-use uuid::Uuid;
 use std::time::Duration;
+use uuid::Uuid;
 
 use super::combat::{spawn_attack, Combo, Effect, EffectType};
 
@@ -186,7 +186,7 @@ pub fn player_handle(
     player.tick_effects(time.delta());
 }
 
-#[derive(Component, Clone, Default)]
+#[derive(Component, Clone, Default, serde::Deserialize, serde::Serialize, Debug)]
 /// A Player instance contains useful information about a Player entity.
 pub struct Player {
     /// Contains the health points of the [`Player`].
@@ -225,5 +225,12 @@ impl Player {
 
     pub fn has_effect(&self, rhs: EffectType) -> bool {
         self.effects.iter().any(|effect| effect.effect_type == rhs)
+    }
+
+    pub fn new_from_id(id: Uuid) -> Self {
+        Self {
+            id,
+            ..Default::default()
+        }
     }
 }

@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use bevy::{
     asset::Assets,
     ecs::system::{Commands, Res, ResMut},
@@ -13,8 +11,9 @@ use bevy_egui::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
-    game::collision::CollisionGroupSet, networking::server::{self, setup_remote_client, ServerInstance}, server::ApplicationCtx,
-    UiMode,
+    game::collision::CollisionGroupSet,
+    networking::server::{setup_remote_client_handler, ServerInstance},
+    server::ApplicationCtx,
 };
 use tokio::sync::mpsc::channel;
 
@@ -60,13 +59,8 @@ pub fn ui_system(
                             )
                             .clicked()
                         {
-                            // Set ui state
-                            app_ctx.ui_mode = UiMode::Game;
-
                             // Create a new pair of channels
-                            let (sender, receiver) = channel::<
-                                anyhow::Result<ServerInstance>,
-                            >(255);
+                            let (sender, receiver) = channel::<anyhow::Result<ServerInstance>>(255);
 
                             // Set the receiver so that it will receive the new instnace from the async task
                             app_ctx.server_instance_receiver = receiver;
@@ -80,6 +74,10 @@ pub fn ui_system(
                                 sender.send(connection_result).await.unwrap();
                             });
                         };
+
+                        if let Some(inst) = &app_ctx.server_instance {
+                            ui.label(format!("{}", inst.local_address));
+                        }
 
                         ui.add_space(50.);
                     });
@@ -118,12 +116,16 @@ pub fn ui_system(
         match server_instance {
             Ok(server_instance) => {
                 app_ctx.server_instance = Some(server_instance.clone());
-
                 // Initalize game
-                setup_game(commands, meshes, materials, collision_groups);
+                setup_game(commands, meshes, materials, &collision_groups);
 
                 // Initalize server threads
-                setup_remote_client(server_instance, runtime, app_ctx.cancellation_token.clone());
+                setup_remote_client_handler(
+                    server_instance,
+                    runtime,
+                    app_ctx.cancellation_token.clone(),
+                    collision_groups.clone(),
+                );
             }
             Err(err) => {}
         }

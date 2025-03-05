@@ -14,7 +14,7 @@ pub struct MapObject {
     pub avoid_collision_from: Direction,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 pub enum Direction {
     Left,
     #[default]
@@ -33,21 +33,22 @@ pub enum UiMode {
 }
 
 pub mod server {
-    use std::{net::SocketAddr, sync::Arc};
+    use std::sync::Arc;
 
     use bevy::ecs::system::Resource;
     use parking_lot::RwLock;
-    use quinn::rustls::pki_types::CertificateDer;
+
     use rand::{rngs::SmallRng, SeedableRng};
     use tokio::sync::mpsc::{channel, Receiver};
     use tokio_util::sync::CancellationToken;
 
-    use crate::{networking::server::{RemoteClient, ServerInstance}, UiMode};
+    use crate::{
+        networking::server::{RemoteClient, ServerInstance},
+        UiMode,
+    };
 
     #[derive(Default)]
-    pub struct UiState {
-        
-    }
+    pub struct UiState {}
 
     #[derive(Resource)]
     pub struct ApplicationCtx {
@@ -60,8 +61,7 @@ pub mod server {
         /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
         pub rand: rand::rngs::SmallRng,
 
-        pub server_instance_receiver:
-            Receiver<anyhow::Result<ServerInstance>>,
+        pub server_instance_receiver: Receiver<anyhow::Result<ServerInstance>>,
 
         pub server_instance: Option<ServerInstance>,
 
@@ -87,12 +87,15 @@ pub mod server {
 
 pub mod client {
 
+    use tokio::sync::mpsc::Sender;
+
     use bevy::ecs::system::Resource;
 
     use egui_toast::Toasts;
 
     use rand::{rngs::SmallRng, SeedableRng};
     use tokio::sync::mpsc::{channel, Receiver};
+    use tokio_util::sync::CancellationToken;
 
     use crate::{networking::client::ClientConnection, UiMode};
 
@@ -118,26 +121,41 @@ pub mod client {
 
         /// Receives the connecting threads connection result.
         pub connection_receiver: Receiver<anyhow::Result<ClientConnection>>,
+        pub connection_sender: Sender<anyhow::Result<ClientConnection>>,
 
         /// Used to display notifications with egui
         pub egui_toasts: Toasts,
+
+        pub cancellation_token: CancellationToken,
     }
 
     impl Default for ApplicationCtx {
         fn default() -> Self {
+            let (connection_sender, connection_receiver) =
+                channel::<anyhow::Result<ClientConnection>>(2000);
+
             Self {
                 ui_mode: UiMode::MainMenu,
                 ui_state: UiState::default(),
                 client_connection: None,
                 rand: SmallRng::from_rng(&mut rand::rng()),
-                connection_receiver: channel(255).1,
+                connection_receiver,
+                connection_sender,
                 egui_toasts: Toasts::new(),
+                cancellation_token: CancellationToken::new(),
             }
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub enum GameAction {
+pub enum GameInput {
+    Jump,
+    Duck,
+    Right,
+    Left,
+    Attack,
+    Defend,
 
+    Join,
 }
