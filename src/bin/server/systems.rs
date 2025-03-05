@@ -65,7 +65,7 @@ pub fn tick(
 
             for client in clients.iter() {
                 let message_bytes = message_bytes.clone();
-                let message_length_bytes = message_length_bytes.clone();
+                let message_length_bytes = message_length_bytes;
 
                 let client = client.clone();
 

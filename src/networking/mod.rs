@@ -77,6 +77,9 @@ pub struct ServerTickUpdate {
 
 impl ServerTickUpdate {
     pub fn new(position: Transform, player: Player) -> Self {
-        Self { transfrom: position, player }
+        Self {
+            transfrom: position,
+            player,
+        }
     }
 }

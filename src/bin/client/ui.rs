@@ -174,11 +174,11 @@ pub fn ui_system(
     if let Some(client_connection) = &mut app_ctx.client_connection {
         if let Ok(server_tick_update) = client_connection.main_thread_handle.try_recv() {
             if !players.iter_mut().any(|(_e, mut player, mut transfrom)| {
-                let player_found = player.id == server_tick_update.player.id.clone();
+                let player_found = player.id == server_tick_update.player.id;
 
                 if player_found {
                     *player = server_tick_update.player.clone();
-                    *transfrom = server_tick_update.transfrom.clone();
+                    *transfrom = server_tick_update.transfrom;
                 }
 
                 player_found

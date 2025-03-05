@@ -6,7 +6,10 @@ use bevy::{
     DefaultPlugins,
 };
 use bevy_egui::EguiPlugin;
-use bevy_rapier2d::{plugin::{NoUserData, RapierPhysicsPlugin}, render::RapierDebugRenderPlugin};
+use bevy_rapier2d::{
+    plugin::{NoUserData, RapierPhysicsPlugin},
+    render::RapierDebugRenderPlugin,
+};
 use punchafriend::{client::ApplicationCtx, game::collision::CollisionGroupSet};
 use ui::ui_system;
 
@@ -27,7 +30,7 @@ fn main() {
     app.add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default());
     app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0));
     app.add_plugins(RapierDebugRenderPlugin::default());
-    
+
     app.insert_resource(ApplicationCtx::default());
     app.insert_resource(CollisionGroupSet::default());
 
