@@ -2,7 +2,10 @@ use std::{net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, WriteHalf}, TcpStream, UdpSocket}, select, sync::mpsc::{channel, Receiver, Sender}
+    io::AsyncReadExt,
+    net::{TcpStream, UdpSocket},
+    select,
+    sync::mpsc::{channel, Receiver, Sender},
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -38,7 +41,7 @@ impl ClientConnection {
         let udp_socket = Arc::new(UdpSocket::bind("[::]:0").await?);
 
         // Get the port the UdpSocket is bound to.
-        // We will send this to the server so that it knows where to send the ticks to. 
+        // We will send this to the server so that it knows where to send the ticks to.
         let socket_port = udp_socket.local_addr()?.port();
 
         let client_metadata = EndpointMetadata::new(socket_port);
@@ -48,12 +51,23 @@ impl ClientConnection {
         let server_metadata = exchange_metadata(&mut tcp_stream, client_metadata).await?;
 
         // Connect to the destination address
-        udp_socket.connect(dbg!(SocketAddr::new(dest_address.ip(), server_metadata.game_socket_port))).await?;
+        udp_socket
+            .connect(dbg!(SocketAddr::new(
+                dest_address.ip(),
+                server_metadata.game_socket_port
+            )))
+            .await?;
 
         // Create a new channel pair
         let (sender, receiver) = channel::<GameInput>(2000);
 
-        setup_server_sender(receiver, cancellation_token.clone(), udp_socket.clone(), server_metadata.client_uuid).await;
+        setup_server_sender(
+            receiver,
+            cancellation_token.clone(),
+            udp_socket.clone(),
+            server_metadata.client_uuid,
+        )
+        .await;
 
         let (client_sender, client_receiver) = channel::<ServerTickUpdate>(2000);
 
@@ -118,7 +132,10 @@ pub async fn setup_server_listener(
     });
 }
 
-async fn exchange_metadata(tcp_stream: &mut TcpStream, client_metadata: EndpointMetadata) -> anyhow::Result<ServerMetadata> {
+async fn exchange_metadata(
+    tcp_stream: &mut TcpStream,
+    client_metadata: EndpointMetadata,
+) -> anyhow::Result<ServerMetadata> {
     // Allocate a buffer for the incoming message
     let mut msg_header_buf = vec![0; 4];
 

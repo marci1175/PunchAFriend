@@ -1,5 +1,3 @@
-use std::{net::SocketAddr, sync::Arc};
-
 use bevy::transform::components::Transform;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -30,7 +28,6 @@ impl ServerTickUpdate {
     }
 }
 
-
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct ServerMetadata {
     pub client_uuid: Uuid,
@@ -39,7 +36,10 @@ pub struct ServerMetadata {
 
 impl ServerMetadata {
     pub fn new(client_uuid: Uuid, game_socket_port: u16) -> Self {
-        Self { client_uuid, game_socket_port }
+        Self {
+            client_uuid,
+            game_socket_port,
+        }
     }
 }
 
@@ -63,7 +63,7 @@ impl EndpointMetadata {
 
 /// Writes a slice to a buffer with the slice's length as the header.
 /// This results in the first 4 bytes being the [`u32`] representation of the slice's length.
-pub async fn write_to_buf_with_len<T> (buf: &mut T, slice: &[u8]) -> anyhow::Result<()>
+pub async fn write_to_buf_with_len<T>(buf: &mut T, slice: &[u8]) -> anyhow::Result<()>
 where
     T: AsyncWriteExt + Unpin,
 {

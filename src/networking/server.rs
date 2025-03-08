@@ -12,13 +12,21 @@ use bevy_rapier2d::prelude::{
 use bevy_tokio_tasks::TokioTasksRuntime;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpSocket, TcpStream, UdpSocket}, select, sync::broadcast::{channel, Sender}
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpListener, TcpSocket, TcpStream, UdpSocket,
+    },
+    select,
+    sync::broadcast::{channel, Sender},
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    game::{collision::CollisionGroupSet, pawns::Player}, networking::UDP_DATAGRAM_SIZE, GameInput
+    game::{collision::CollisionGroupSet, pawns::Player},
+    networking::UDP_DATAGRAM_SIZE,
+    GameInput,
 };
 
 use super::{write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, ServerMetadata};
@@ -52,7 +60,7 @@ pub struct ServerInstance {
 impl ServerInstance {
     pub async fn create_server() -> anyhow::Result<Self> {
         let tcp_socket = TcpSocket::new_v6()?;
-        
+
         tcp_socket.bind("[::]:0".parse()?)?;
 
         let tcp_listener = tcp_socket.listen(2048)?;
@@ -89,7 +97,7 @@ pub fn setup_remote_client_handler(
 
     let udp_socket = server_instance.udp_socket.clone();
 
-    let metadata = server_instance.metadata.clone();
+    let metadata = server_instance.metadata;
 
     // Spawn the incoming connection accepter thread
     tokio_runtime.spawn_background_task(move |mut ctx| async move {        
@@ -198,7 +206,7 @@ async fn handle_incoming_request(
     tcp_listener: Arc<Mutex<TcpListener>>,
 ) -> anyhow::Result<(TcpStream, SocketAddr)> {
     let client_connection = tcp_listener.lock().accept().await?;
-    
+
     Ok(client_connection)
 }
 
@@ -235,9 +243,13 @@ fn setup_client_listener(
     });
 }
 
-async fn exchange_metadata(send: &mut OwnedWriteHalf, read: &mut OwnedReadHalf, metadata: ServerMetadata) -> anyhow::Result<EndpointMetadata> {
+async fn exchange_metadata(
+    send: &mut OwnedWriteHalf,
+    read: &mut OwnedReadHalf,
+    metadata: ServerMetadata,
+) -> anyhow::Result<EndpointMetadata> {
     let slice = rmp_serde::to_vec(&metadata)?;
-    
+
     write_to_buf_with_len(send, &slice).await?;
 
     let metadata_length = read.read_u32().await?;

@@ -73,8 +73,11 @@ pub fn tick(
 
                 runtime.spawn_background_task(move |_ctx| async move {
                     message_length_bytes.extend(message_bytes);
-                    
-                    udp_socket.send_to(&message_length_bytes, client.remote_game_socket_address).await.unwrap();
+
+                    udp_socket
+                        .send_to(&message_length_bytes, client.remote_game_socket_address)
+                        .await
+                        .unwrap();
                 });
             }
         }
