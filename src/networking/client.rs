@@ -6,24 +6,24 @@ use quinn::{
     rustls::{self},
     ClientConfig, Endpoint, RecvStream, SendStream,
 };
+use rustls::client;
 use tokio::{
-    select,
-    sync::mpsc::{channel, Receiver, Sender},
+    io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, WriteHalf}, TcpStream, UdpSocket}, select, sync::mpsc::{channel, Receiver, Sender}
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    networking::{RemoteClientRequest, ServerTickUpdate},
+    networking::{RemoteClientRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE},
     GameInput,
 };
 
-use super::SkipServerVerification;
+use super::{write_to_buf_with_len, EndpointMetadata, ServerMetadata, SkipServerVerification};
 
 #[derive(Resource)]
 pub struct ClientConnection {
-    pub connection_handle: quinn::Endpoint,
-    pub id: Uuid,
+    pub server_metadata: ServerMetadata,
+
     pub sender_thread_handle: Sender<GameInput>,
 
     pub main_thread_handle: Receiver<ServerTickUpdate>,
@@ -37,36 +37,36 @@ impl ClientConnection {
         // Parse destination address.
         let dest_address: SocketAddr = address.parse()?;
 
-        // Create a new QUIC instance.
-        let mut endpoint = quinn::Endpoint::client("[::]:0".parse()?)?;
+        let mut tcp_stream = TcpStream::connect(dest_address).await?;
 
-        endpoint.set_default_client_config(ClientConfig::new(Arc::new(
-            QuicClientConfig::try_from(
-                rustls::ClientConfig::builder()
-                    .dangerous()
-                    .with_custom_certificate_verifier(SkipServerVerification::new())
-                    .with_no_client_auth(),
-            )?,
-        )));
+        // Create a new UdpSocket instance.
+        // This is used to send ServerTicks to the client from the server.
+        let udp_socket = Arc::new(UdpSocket::bind("[::]:0").await?);
 
+        // Get the port the UdpSocket is bound to.
+        // We will send this to the server so that it knows where to send the ticks to. 
+        let socket_port = udp_socket.local_addr()?.port();
+
+        let client_metadata = EndpointMetadata::new(socket_port);
+
+        // Exchange metadata with the server.
+        // We will send the UdpSocket's port and the server will send our unique uuid, and the port of the Server's UdpSocket.
+        let server_metadata = exchange_metadata(&mut tcp_stream, client_metadata).await?;
+
+        // Connect to the destination address
+        udp_socket.connect(dbg!(SocketAddr::new(dest_address.ip(), server_metadata.game_socket_port))).await?;
+
+        // Create a new channel pair
         let (sender, receiver) = channel::<GameInput>(2000);
 
-        let (mut send_stream, mut recv_stream) =
-            open_connection_to_endpoint(endpoint.clone(), dest_address).await?;
-
-        send_stream.write_all(&[0; 1]).await?;
-
-        let uuid = fetch_metadata(&mut recv_stream).await?;
-
-        setup_server_sender(receiver, cancellation_token.clone(), send_stream, uuid).await;
+        setup_server_sender(receiver, cancellation_token.clone(), udp_socket.clone(), server_metadata.client_uuid).await;
 
         let (client_sender, client_receiver) = channel::<ServerTickUpdate>(2000);
 
-        setup_server_listener(cancellation_token, recv_stream, client_sender).await;
+        setup_server_listener(cancellation_token, udp_socket, client_sender).await;
 
         Ok(ClientConnection {
-            connection_handle: endpoint,
-            id: uuid,
+            server_metadata,
             sender_thread_handle: sender,
             main_thread_handle: client_receiver,
         })
@@ -76,8 +76,8 @@ impl ClientConnection {
 pub async fn setup_server_sender(
     mut receiver: Receiver<GameInput>,
     cancellation_token: CancellationToken,
-    mut send_stream: SendStream,
-    uuid: Uuid,
+    udp_socket: Arc<UdpSocket>,
+    client_uuid: Uuid,
 ) {
     tokio::spawn(async move {
         loop {
@@ -87,7 +87,7 @@ pub async fn setup_server_sender(
                 }
 
                 Some(game_input) = receiver.recv() => {
-                    send_game_action(&mut send_stream, game_input, uuid).await;
+                    send_game_action(udp_socket.clone(), game_input, client_uuid).await;
                 }
             }
         }
@@ -96,26 +96,26 @@ pub async fn setup_server_sender(
 
 pub async fn setup_server_listener(
     cancellation_token: CancellationToken,
-    mut recv_stream: RecvStream,
+    socket: Arc<UdpSocket>,
     client_sender: Sender<ServerTickUpdate>,
 ) {
     tokio::spawn(async move {
         loop {
-            let mut buf = vec![0; 4];
+            let mut buf = vec![0; UDP_DATAGRAM_SIZE];
 
             select! {
                 _ = cancellation_token.cancelled() => {
                     break;
                 }
 
-                Ok(_) = recv_stream.read_exact(&mut buf) => {
-                    let message_length = u32::from_be_bytes(buf.try_into().unwrap());
+                Ok(_) = socket.peek(&mut buf) => {
+                    let message_length = u32::from_be_bytes(buf[..4].try_into().unwrap());
 
-                    let mut msg_buf = vec![0; message_length as usize];
+                    let mut msg_buf = vec![0; message_length as usize + 4];
 
-                    recv_stream.read_exact(&mut msg_buf).await.unwrap();
+                    socket.recv(&mut msg_buf).await.unwrap();
 
-                    let remote_client_request = rmp_serde::from_slice::<ServerTickUpdate>(&msg_buf).unwrap();
+                    let remote_client_request = rmp_serde::from_slice::<ServerTickUpdate>(&msg_buf[4..]).unwrap();
 
                     client_sender.send(remote_client_request).await.unwrap();
                 }
@@ -124,37 +124,43 @@ pub async fn setup_server_listener(
     });
 }
 
-async fn open_connection_to_endpoint(
-    endpoint: Endpoint,
-    dest_address: SocketAddr,
-) -> anyhow::Result<(quinn::SendStream, quinn::RecvStream)> {
-    let connection_handle = endpoint.connect(dest_address, "punchafriend")?.await?;
+async fn exchange_metadata(tcp_stream: &mut TcpStream, client_metadata: EndpointMetadata) -> anyhow::Result<ServerMetadata> {
+    // Allocate a buffer for the incoming message
+    let mut msg_header_buf = vec![0; 4];
 
-    Ok(connection_handle.open_bi().await?)
+    // Read the bytes into the buffer
+    tcp_stream.read_exact(&mut msg_header_buf).await?;
+
+    // Allocate buffer
+    let mut buf = vec![0; u32::from_be_bytes(msg_header_buf.try_into().unwrap()) as usize];
+
+    // Write the bytes into the buffer
+    tcp_stream.read_exact(&mut buf).await?;
+
+    // Deserialize the bytes and return the result
+    let server_metadata = rmp_serde::from_slice::<ServerMetadata>(&buf)?;
+
+    // Serialize the client's metadata
+    let metadata_bytes = rmp_serde::to_vec(&client_metadata)?;
+
+    // Send the client's metadata
+    write_to_buf_with_len(tcp_stream, &metadata_bytes).await?;
+
+    Ok(server_metadata)
 }
 
-async fn fetch_metadata(recv: &mut RecvStream) -> anyhow::Result<uuid::Uuid> {
-    let mut buf = vec![0; 16];
-
-    recv.read_exact(&mut buf).await?;
-
-    let uuid = uuid::Uuid::from_bytes(
-        buf.try_into()
-            .map_err(|_| anyhow::Error::msg("Invalid UUID bytes in metadata."))?,
-    );
-
-    Ok(uuid)
-}
-
-async fn send_game_action(send: &mut SendStream, game_input: GameInput, uuid: Uuid) {
+async fn send_game_action(send: Arc<UdpSocket>, game_input: GameInput, uuid: Uuid) {
     let message_bytes = rmp_serde::to_vec(&RemoteClientRequest {
         id: uuid,
         action: game_input,
     })
     .unwrap();
 
-    let message_length_bytes = (message_bytes.len() as u32).to_be_bytes();
+    let mut message_header = (message_bytes.len() as u32).to_be_bytes().to_vec();
 
-    send.write_all(&message_length_bytes).await.unwrap();
-    send.write_all(&message_bytes).await.unwrap();
+    message_header.extend(message_bytes);
+
+    send.writable().await.unwrap();
+
+    send.send(&message_header).await.unwrap();
 }

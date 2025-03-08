@@ -25,7 +25,6 @@ use punchafriend::{
     server::ApplicationCtx,
     Direction, MapElement,
 };
-use tokio::io::AsyncWriteExt;
 
 pub fn setup_game(
     mut commands: Commands,
@@ -56,32 +55,26 @@ pub fn tick(
 ) {
     for (_entity, player, transform) in players.iter() {
         if let Some(server_instance) = &app_ctx.server_instance {
-            let clients = server_instance.connected_client.write();
+            let clients = server_instance.connected_client_game_sockets.write();
 
             let server_tick_update = ServerTickUpdate::new(*transform, player.clone());
 
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
+
             let message_length_bytes = (message_bytes.len() as u32).to_be_bytes();
 
             for client in clients.iter() {
+                let udp_socket = server_instance.udp_socket.clone();
                 let message_bytes = message_bytes.clone();
-                let message_length_bytes = message_length_bytes;
+
+                let mut message_length_bytes = message_length_bytes.to_vec();
 
                 let client = client.clone();
 
                 runtime.spawn_background_task(move |_ctx| async move {
-                    client
-                        .send_stream_handle
-                        .lock()
-                        .write_all(&message_length_bytes)
-                        .await
-                        .unwrap();
-                    client
-                        .send_stream_handle
-                        .lock()
-                        .write_all(&message_bytes)
-                        .await
-                        .unwrap();
+                    message_length_bytes.extend(message_bytes);
+                    
+                    udp_socket.send_to(&message_length_bytes, client.remote_game_socket_address).await.unwrap();
                 });
             }
         }

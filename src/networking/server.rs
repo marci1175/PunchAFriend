@@ -11,82 +11,66 @@ use bevy_rapier2d::prelude::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use parking_lot::{Mutex, RwLock};
-use quinn::{
-    rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer},
-    Endpoint, RecvStream, SendStream, ServerConfig,
-};
 use tokio::{
-    select,
-    sync::broadcast::{channel, Sender},
+    io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpSocket, TcpStream, UdpSocket}, select, sync::broadcast::{channel, Sender}
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    game::{collision::CollisionGroupSet, pawns::Player},
-    GameInput,
+    game::{collision::CollisionGroupSet, pawns::Player}, networking::UDP_DATAGRAM_SIZE, GameInput
 };
 
-use super::RemoteClientRequest;
+use super::{write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, ServerMetadata};
 
 #[derive(Debug, Clone)]
-pub struct RemoteClient {
+pub struct RemoteGameClient {
     pub uid: Uuid,
-    pub send_stream_handle: Arc<Mutex<SendStream>>,
+    pub remote_game_socket_address: SocketAddr,
 }
 
-impl RemoteClient {
-    pub fn new(uid: Uuid, send_stream_handle: SendStream) -> Self {
+impl RemoteGameClient {
+    pub fn new(uid: Uuid, remote_game_socket_address: SocketAddr) -> Self {
         Self {
             uid,
-            send_stream_handle: Arc::new(Mutex::new(send_stream_handle)),
+            remote_game_socket_address,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct ServerInstance {
-    pub connection_handle: quinn::Endpoint,
+    pub tcp_listener: Arc<Mutex<TcpListener>>,
+    pub udp_socket: Arc<UdpSocket>,
 
-    pub local_address: SocketAddr,
+    pub metadata: EndpointMetadata,
+    pub tcp_listener_port: u16,
 
-    pub certificate: CertificateDer<'static>,
-
-    pub connected_client: Arc<RwLock<Vec<RemoteClient>>>,
+    pub connected_client_game_sockets: Arc<RwLock<Vec<RemoteGameClient>>>,
 }
 
 impl ServerInstance {
     pub async fn create_server() -> anyhow::Result<Self> {
-        let (config, cert) = configure_server()?;
+        let tcp_socket = TcpSocket::new_v6()?;
+        
+        tcp_socket.bind("[::]:0".parse()?)?;
 
-        let quic_endpoint = Endpoint::server(config, "[::]:0".parse()?)?;
+        let tcp_listener = tcp_socket.listen(2048)?;
 
-        let local_addr = quic_endpoint.local_addr()?;
+        let tcp_listener_port = tcp_listener.local_addr()?.port();
+
+        let udp_socket = UdpSocket::bind("[::]:0").await?;
+
+        let udp_socket_port = dbg!(udp_socket.local_addr()?).port();
 
         Ok(Self {
-            connection_handle: quic_endpoint,
-            local_address: local_addr,
-            certificate: cert,
-            connected_client: Arc::new(RwLock::new(vec![])),
+            tcp_listener: Arc::new(Mutex::new(tcp_listener)),
+            udp_socket: Arc::new(udp_socket),
+            tcp_listener_port,
+            metadata: EndpointMetadata::new(udp_socket_port),
+            connected_client_game_sockets: Arc::new(RwLock::new(vec![])),
         })
     }
-}
-
-fn configure_server() -> anyhow::Result<(ServerConfig, CertificateDer<'static>)> {
-    let cert = rcgen::generate_simple_self_signed(vec!["punchafriend".into()]).unwrap();
-
-    let cert_der = CertificateDer::from(cert.cert);
-
-    let priv_key = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
-
-    let mut server_config =
-        ServerConfig::with_single_cert(vec![cert_der.clone()], priv_key.into())?;
-
-    let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
-
-    transport_config.max_concurrent_uni_streams(0_u8.into());
-
-    Ok((server_config, cert_der))
 }
 
 pub fn setup_remote_client_handler(
@@ -95,13 +79,17 @@ pub fn setup_remote_client_handler(
     cancellation_token: CancellationToken,
     collision_groups: CollisionGroupSet,
 ) {
-    let server_endpoint = server_instance.connection_handle.clone();
+    let tcp_listener = server_instance.tcp_listener.clone();
 
-    let client_list = server_instance.connected_client.clone();
+    let client_game_socket_list = server_instance.connected_client_game_sockets.clone();
 
     let (sender, mut receiver) = channel::<RemoteClientRequest>(2000);
 
     let cancellation_token_clone = cancellation_token.clone();
+
+    let udp_socket = server_instance.udp_socket.clone();
+
+    let metadata = server_instance.metadata.clone();
 
     // Spawn the incoming connection accepter thread
     tokio_runtime.spawn_background_task(move |mut ctx| async move {        
@@ -111,13 +99,16 @@ pub fn setup_remote_client_handler(
                     break;
                 },
 
-                Ok((mut send, recv)) = handle_incoming_request(server_endpoint.clone()) => {
+                Ok((tcp_stream, socket_addr)) = handle_incoming_request(tcp_listener.clone()) => {
                     let uuid = Uuid::new_v4();
 
-                    if let Ok(_) = send_metadata(&mut send, uuid).await {
-                        client_list.write().push(RemoteClient::new(uuid, send));
+                    let (mut read, mut write) = tcp_stream.into_split();
 
-                        setup_client_handler(recv, cancellation_token_clone.clone(), sender.clone());
+                    if let Ok(client_metadata) = exchange_metadata(&mut write, &mut read, metadata.into_server_metadata(uuid)).await {
+
+                        client_game_socket_list.write().push(RemoteGameClient::new(uuid, SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port)));
+
+                        setup_client_listener(udp_socket.clone(), cancellation_token_clone.clone(), sender.clone());
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -204,43 +195,35 @@ pub fn setup_remote_client_handler(
 }
 
 async fn handle_incoming_request(
-    server_endpoint: Endpoint,
-) -> anyhow::Result<(quinn::SendStream, quinn::RecvStream)> {
-    let client_connection = server_endpoint.accept().await.ok_or(anyhow::Error::msg(
-        "Client has closed the connection before it could succeed.",
-    ))?;
-
-    let connection = client_connection.accept()?.await?;
-
-    let mut bi_conn = connection.accept_bi().await?;
-
-    bi_conn.1.read_exact(&mut [0; 1]).await?;
-
-    Ok(bi_conn)
+    tcp_listener: Arc<Mutex<TcpListener>>,
+) -> anyhow::Result<(TcpStream, SocketAddr)> {
+    let client_connection = tcp_listener.lock().accept().await?;
+    
+    Ok(client_connection)
 }
 
-fn setup_client_handler(
-    mut recv_stream: RecvStream,
+fn setup_client_listener(
+    socket: Arc<UdpSocket>,
     cancellation_token: CancellationToken,
     client_request_channel: Sender<RemoteClientRequest>,
 ) {
     tokio::spawn(async move {
         loop {
-            let mut buf = vec![0; 4];
+            let mut buf = vec![0; UDP_DATAGRAM_SIZE];
 
             select! {
                 _ = cancellation_token.cancelled() => {
                     break;
                 },
 
-                _ = recv_stream.read_exact(&mut buf) => {
-                    let incoming_msg_length = u32::from_be_bytes(buf.try_into().unwrap());
+                _ = socket.peek(&mut buf) => {
+                    let incoming_msg_length = u32::from_be_bytes(buf[..4].try_into().unwrap());
 
-                    let mut msg_buf = vec![0; incoming_msg_length as usize];
+                    let mut msg_buf = vec![0; incoming_msg_length as usize + 4];
 
-                    recv_stream.read_exact(&mut msg_buf).await.unwrap();
+                    socket.recv(&mut msg_buf).await.unwrap();
 
-                    if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf) {
+                    if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf[4..]) {
                         client_request_channel.send(client_request).unwrap();
                     }
                     else {
@@ -252,8 +235,18 @@ fn setup_client_handler(
     });
 }
 
-async fn send_metadata(send: &mut SendStream, uuid: Uuid) -> anyhow::Result<()> {
-    send.write_all(uuid.as_bytes()).await?;
+async fn exchange_metadata(send: &mut OwnedWriteHalf, read: &mut OwnedReadHalf, metadata: ServerMetadata) -> anyhow::Result<EndpointMetadata> {
+    let slice = rmp_serde::to_vec(&metadata)?;
+    
+    write_to_buf_with_len(send, &slice).await?;
 
-    Ok(())
+    let metadata_length = read.read_u32().await?;
+
+    let mut buf = vec![0; metadata_length as usize];
+
+    read.read_exact(&mut buf).await?;
+
+    let client_metadata = rmp_serde::from_slice::<EndpointMetadata>(&buf)?;
+
+    Ok(client_metadata)
 }

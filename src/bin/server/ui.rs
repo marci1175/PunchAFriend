@@ -76,7 +76,7 @@ pub fn ui_system(
                         };
 
                         if let Some(inst) = &app_ctx.server_instance {
-                            ui.label(format!("{}", inst.local_address));
+                            ui.label(format!("{}", inst.tcp_listener_port));
                         }
 
                         ui.add_space(50.);

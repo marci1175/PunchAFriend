@@ -43,7 +43,7 @@ pub mod server {
     use tokio_util::sync::CancellationToken;
 
     use crate::{
-        networking::server::{RemoteClient, ServerInstance},
+        networking::server::{RemoteGameClient, ServerInstance},
         UiMode,
     };
 
@@ -67,7 +67,7 @@ pub mod server {
 
         pub cancellation_token: CancellationToken,
 
-        pub client_list: Arc<RwLock<Vec<RemoteClient>>>,
+        pub client_list: Arc<RwLock<Vec<RemoteGameClient>>>,
     }
 
     impl Default for ApplicationCtx {
@@ -86,7 +86,6 @@ pub mod server {
 }
 
 pub mod client {
-
     use tokio::sync::mpsc::Sender;
 
     use bevy::ecs::system::Resource;
