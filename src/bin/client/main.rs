@@ -16,10 +16,6 @@ use ui::ui_system;
 fn main() {
     let mut app = App::new();
 
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
-
     app.add_plugins(DefaultPlugins.build().add(LogPlugin {
         filter: "info,wgpu_core=warn,wgpu_hal=off".into(),
         level: bevy::log::Level::DEBUG,

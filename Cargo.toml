@@ -21,13 +21,10 @@ strum = {version = "0.27.1", features = ["derive"]}
 parking_lot = "0.12.3"
 egui-toast = "0.16.0"
 bevy-tokio-tasks = "0.15.0"
-quinn = "0.11.6"
 rfd = "0.15.2"
-rcgen = "0.13.2"
 tokio-util = "0.7.13"
 uuid = "1.15.1"
 rmp-serde = "1.3.0"
 serde = {version = "1.0.218", features = ["derive"]}
 log = { version = "0.4.26", features = ["max_level_debug", "release_max_level_warn"] }
-rustls = { version = "0.23.23", features = ["ring"] }
 dashmap = "6.1.0"

@@ -1,12 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
-use quinn::{
-    crypto::rustls::QuicClientConfig,
-    rustls::{self},
-    ClientConfig, Endpoint, RecvStream, SendStream,
-};
-use rustls::client;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, WriteHalf}, TcpStream, UdpSocket}, select, sync::mpsc::{channel, Receiver, Sender}
 };
@@ -18,7 +12,7 @@ use crate::{
     GameInput,
 };
 
-use super::{write_to_buf_with_len, EndpointMetadata, ServerMetadata, SkipServerVerification};
+use super::{write_to_buf_with_len, EndpointMetadata, ServerMetadata};
 
 #[derive(Resource)]
 pub struct ClientConnection {
