@@ -47,35 +47,36 @@ pub fn tick(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
-    app_ctx: ResMut<ApplicationCtx>,
+    mut app_ctx: ResMut<ApplicationCtx>,
     collision_groups: Res<CollisionGroupSet>,
     players: Query<(Entity, &Player, &Transform)>,
     time: Res<Time>,
     runtime: Res<TokioTasksRuntime>,
 ) {
+    // Increment global tick counter
+    app_ctx.tick_count = app_ctx.tick_count.wrapping_add(1);
+
     for (_entity, player, transform) in players.iter() {
         if let Some(server_instance) = &app_ctx.server_instance {
-            let clients = server_instance.connected_client_game_sockets.write();
-
-            let server_tick_update = ServerTickUpdate::new(*transform, player.clone());
+            let server_tick_update = ServerTickUpdate::new(*transform, player.clone(), app_ctx.tick_count);
 
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
 
             let message_length_bytes = (message_bytes.len() as u32).to_be_bytes();
 
-            for client in clients.iter() {
+            for client in server_instance.connected_client_game_sockets.iter() {
+                let addr = client.key().clone();
+
                 let udp_socket = server_instance.udp_socket.clone();
                 let message_bytes = message_bytes.clone();
 
                 let mut message_length_bytes = message_length_bytes.to_vec();
 
-                let client = client.clone();
-
                 runtime.spawn_background_task(move |_ctx| async move {
                     message_length_bytes.extend(message_bytes);
 
                     udp_socket
-                        .send_to(&message_length_bytes, client.remote_game_socket_address)
+                        .send_to(&message_length_bytes, addr)
                         .await
                         .unwrap();
                 });

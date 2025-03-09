@@ -68,6 +68,8 @@ pub mod server {
         pub cancellation_token: CancellationToken,
 
         pub client_list: Arc<RwLock<Vec<RemoteGameClient>>>,
+
+        pub tick_count: u64,
     }
 
     impl Default for ApplicationCtx {
@@ -80,6 +82,7 @@ pub mod server {
                 server_instance: None,
                 cancellation_token: CancellationToken::new(),
                 client_list: Arc::new(RwLock::new(vec![])),
+                tick_count: 0,
             }
         }
     }
@@ -157,4 +160,5 @@ pub enum GameInput {
     Defend,
 
     Join,
+    Exit,
 }

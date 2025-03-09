@@ -15,15 +15,17 @@ pub struct RemoteClientRequest {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ServerTickUpdate {
-    pub transfrom: Transform,
+    pub transform: Transform,
     pub player: Player,
+    pub tick_count: u64,
 }
 
 impl ServerTickUpdate {
-    pub fn new(position: Transform, player: Player) -> Self {
+    pub fn new(transform: Transform, player: Player, tick_count: u64) -> Self {
         Self {
-            transfrom: position,
+            transform,
             player,
+            tick_count,
         }
     }
 }

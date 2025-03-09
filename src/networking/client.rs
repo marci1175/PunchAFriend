@@ -24,6 +24,8 @@ pub struct ClientConnection {
     pub sender_thread_handle: Sender<GameInput>,
 
     pub main_thread_handle: Receiver<ServerTickUpdate>,
+
+    pub last_tick: u64,
 }
 
 impl ClientConnection {
@@ -77,6 +79,7 @@ impl ClientConnection {
             server_metadata,
             sender_thread_handle: sender,
             main_thread_handle: client_receiver,
+            last_tick: 0,
         })
     }
 }
@@ -91,6 +94,9 @@ pub async fn setup_server_sender(
         loop {
             select! {
                 _ = cancellation_token.cancelled() => {
+                    // Send the exit request to the server
+                    send_game_action(udp_socket.clone(), GameInput::Exit, client_uuid).await;
+                    
                     break;
                 }
 
@@ -125,7 +131,8 @@ pub async fn setup_server_listener(
 
                     let remote_client_request = rmp_serde::from_slice::<ServerTickUpdate>(&msg_buf[4..]).unwrap();
 
-                    client_sender.send(remote_client_request).await.unwrap();
+                    // This will return a SendError if the receiver is dropped before the select is completed.
+                    let _ = client_sender.send(remote_client_request).await;
                 }
             }
         }

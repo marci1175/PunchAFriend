@@ -80,6 +80,11 @@ pub fn ui_system(
                     }
                 }
             }
+
+            // Check for pause key
+            if keyboard_input.just_pressed(KeyCode::Escape) {
+                app_ctx.ui_mode = UiMode::PauseWindow;
+            }
         }
         UiMode::MainMenu => {
             // Display main title.
@@ -165,7 +170,17 @@ pub fn ui_system(
                     ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
                         ui.add(egui::Button::new("Resume").frame(false));
                         ui.add(egui::Button::new("Options").frame(false));
-                        ui.add(egui::Button::new("Quit").frame(false));
+
+                        if ui
+                            .add(egui::Button::new("Quit Server").frame(false))
+                            .clicked()
+                        {
+                            app_ctx.cancellation_token.cancel();
+
+                            app_ctx.client_connection = None;
+
+                            app_ctx.ui_mode = UiMode::MainMenu;
+                        }
                     });
                 });
         }
@@ -173,12 +188,20 @@ pub fn ui_system(
 
     if let Some(client_connection) = &mut app_ctx.client_connection {
         if let Ok(server_tick_update) = client_connection.main_thread_handle.try_recv() {
+            // If the tick we have received is older than the newest one we have we drop it.
+            if client_connection.last_tick > server_tick_update.tick_count {
+                return;
+            }
+            
+            // Set the new tick count as the latest tick
+            client_connection.last_tick = server_tick_update.tick_count;
+
             if !players.iter_mut().any(|(_e, mut player, mut transfrom)| {
                 let player_found = player.id == server_tick_update.player.id;
 
                 if player_found {
                     *player = server_tick_update.player.clone();
-                    *transfrom = server_tick_update.transfrom;
+                    *transfrom = server_tick_update.transform;
                 }
 
                 player_found
@@ -186,7 +209,7 @@ pub fn ui_system(
                 commands
                     .spawn(RigidBody::Dynamic)
                     .insert(Collider::ball(20.0))
-                    .insert(server_tick_update.transfrom)
+                    .insert(server_tick_update.transform)
                     .insert(AdditionalMassProperties::Mass(0.1))
                     .insert(ActiveEvents::COLLISION_EVENTS)
                     .insert(LockedAxes::ROTATION_LOCKED)
@@ -207,7 +230,8 @@ pub fn ui_system(
                     // Set the client connection variable
                     app_ctx.client_connection = Some(client_connection);
 
-                    setup_game(commands, meshes, materials, &collision_groups);
+                    // Game setup was handled here, now its at startup. If we want changing maps we want to modify this.
+                    // setup_game(commands, meshes, materials, &collision_groups);
                 }
                 Err(error) => {
                     app_ctx.egui_toasts.add(
@@ -230,7 +254,7 @@ pub fn setup_game(
     mut commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
-    collision_groups: &CollisionGroupSet,
+    collision_groups: Res<CollisionGroupSet>,
 ) {
     // Setup graphics
     commands.spawn(Camera2d);

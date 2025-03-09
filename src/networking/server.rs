@@ -10,6 +10,7 @@ use bevy_rapier2d::prelude::{
     LockedAxes, RigidBody, Velocity,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
+use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -54,7 +55,7 @@ pub struct ServerInstance {
     pub metadata: EndpointMetadata,
     pub tcp_listener_port: u16,
 
-    pub connected_client_game_sockets: Arc<RwLock<Vec<RemoteGameClient>>>,
+    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, Uuid>>,
 }
 
 impl ServerInstance {
@@ -76,7 +77,7 @@ impl ServerInstance {
             udp_socket: Arc::new(udp_socket),
             tcp_listener_port,
             metadata: EndpointMetadata::new(udp_socket_port),
-            connected_client_game_sockets: Arc::new(RwLock::new(vec![])),
+            connected_client_game_sockets: Arc::new(DashMap::new()),
         })
     }
 }
@@ -89,18 +90,22 @@ pub fn setup_remote_client_handler(
 ) {
     let tcp_listener = server_instance.tcp_listener.clone();
 
-    let client_game_socket_list = server_instance.connected_client_game_sockets.clone();
+    let client_game_socket_list: Arc<DashMap<SocketAddr, Uuid>> =
+        server_instance.connected_client_game_sockets.clone();
 
-    let (sender, mut receiver) = channel::<RemoteClientRequest>(2000);
+    let (sender, mut receiver) = channel::<(RemoteClientRequest, SocketAddr)>(2000);
 
     let cancellation_token_clone = cancellation_token.clone();
 
     let udp_socket = server_instance.udp_socket.clone();
 
     let metadata = server_instance.metadata;
+    let connected_clients_clone = client_game_socket_list.clone();
 
     // Spawn the incoming connection accepter thread
     tokio_runtime.spawn_background_task(move |mut ctx| async move {        
+        setup_client_listener(udp_socket.clone(), cancellation_token_clone.clone(), sender.clone(), connected_clients_clone.clone());
+        
         loop {
             select! {
                 _ = cancellation_token_clone.cancelled() => {
@@ -113,10 +118,7 @@ pub fn setup_remote_client_handler(
                     let (mut read, mut write) = tcp_stream.into_split();
 
                     if let Ok(client_metadata) = exchange_metadata(&mut write, &mut read, metadata.into_server_metadata(uuid)).await {
-
-                        client_game_socket_list.write().push(RemoteGameClient::new(uuid, SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port)));
-
-                        setup_client_listener(udp_socket.clone(), cancellation_token_clone.clone(), sender.clone());
+                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), uuid);
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -134,7 +136,7 @@ pub fn setup_remote_client_handler(
                             .insert(ActiveEvents::COLLISION_EVENTS)
                             .insert(collision_groups.player)
                             .insert(Ccd::enabled())
-                            .insert(Player::new_from_id(uuid));
+                            .insert(Player::new_from_id(uuid)); 
                         }).await;
                     }
                 }
@@ -142,14 +144,18 @@ pub fn setup_remote_client_handler(
         }
     });
 
+    
+    let connected_clients_clone = client_game_socket_list.clone();
     tokio_runtime.spawn_background_task(|mut ctx| async move {
         loop {
             select! {
                 _ = cancellation_token.cancelled() => {
                     break;
                 },
+                
+                Ok((remote_client_request, address)) = receiver.recv() => {
+                    let connected_clients_clone = connected_clients_clone.clone();
 
-                Ok(remote_client_request) = receiver.recv() => {
                     // Access the main thread from the async thread
                     ctx.run_on_main_thread(move |main_ctx| {
                         // Create a query from the world in the main thread
@@ -189,9 +195,14 @@ pub fn setup_remote_client_handler(
                                     GameInput::Defend => {
 
                                     },
+                                    GameInput::Exit => {
+                                        entity_commands.despawn();
+
+                                        connected_clients_clone.remove(&address);
+                                    }
                                     GameInput::Join => {
                                         panic!()
-                                    } 
+                                    }
                                 }
                             }
                         }
@@ -213,7 +224,8 @@ async fn handle_incoming_request(
 fn setup_client_listener(
     socket: Arc<UdpSocket>,
     cancellation_token: CancellationToken,
-    client_request_channel: Sender<RemoteClientRequest>,
+    client_request_channel: Sender<(RemoteClientRequest, SocketAddr)>,
+    connected_clients: Arc<DashMap<SocketAddr, Uuid>>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -224,18 +236,39 @@ fn setup_client_listener(
                     break;
                 },
 
-                _ = socket.peek(&mut buf) => {
-                    let incoming_msg_length = u32::from_be_bytes(buf[..4].try_into().unwrap());
+                Ok((_, address)) = socket.peek_from(&mut buf) => {
+                    if connected_clients.contains_key(&address) {
+                        let incoming_msg_length = u32::from_be_bytes(buf[..4].try_into().unwrap());
 
-                    let mut msg_buf = vec![0; incoming_msg_length as usize + 4];
+                        let mut msg_buf = vec![0; incoming_msg_length as usize + 4];
 
-                    socket.recv(&mut msg_buf).await.unwrap();
+                        match socket.recv(&mut msg_buf).await {
+                            Ok(recv_size) => {
+                                if recv_size != msg_buf.len() {
+                                    panic!("Incoming message was too large. Exceeding UDP datagram size.");
+                                }
+                            },
+                            Err(err) => {
+                                // if an error occured remove the clients from the connected addresses
+                                connected_clients.remove(&address);
 
-                    if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf[4..]) {
-                        client_request_channel.send(client_request).unwrap();
+                                // Print out the error
+                                dbg!(err);
+
+                                // Stop executing the remaining code
+                                continue;
+                            },
+                        }
+
+                        if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf[4..]) {
+                            client_request_channel.send((client_request, address)).unwrap();
+                        }
+                        else {
+                            panic!("Received a message unsupported");
+                        }
                     }
                     else {
-                        panic!("Received a message unsupported");
+                        println!("Received a message from an unauthenticated account: {address}");
                     }
                 }
             }

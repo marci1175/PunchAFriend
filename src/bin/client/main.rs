@@ -1,7 +1,7 @@
 mod ui;
 
 use bevy::{
-    app::{App, PluginGroup, Update},
+    app::{App, PluginGroup, Startup, Update},
     log::LogPlugin,
     DefaultPlugins,
 };
@@ -11,7 +11,7 @@ use bevy_rapier2d::{
     render::RapierDebugRenderPlugin,
 };
 use punchafriend::{client::ApplicationCtx, game::collision::CollisionGroupSet};
-use ui::ui_system;
+use ui::{setup_game, ui_system};
 
 fn main() {
     let mut app = App::new();
@@ -31,6 +31,7 @@ fn main() {
     app.insert_resource(CollisionGroupSet::default());
 
     app.add_systems(Update, ui_system);
+    app.add_systems(Startup, setup_game);
 
     app.run();
 }
