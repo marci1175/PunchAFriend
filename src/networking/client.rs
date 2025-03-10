@@ -54,10 +54,10 @@ impl ClientConnection {
 
         // Connect to the destination address
         udp_socket
-            .connect(dbg!(SocketAddr::new(
+            .connect(SocketAddr::new(
                 dest_address.ip(),
                 server_metadata.game_socket_port
-            )))
+            ))
             .await?;
 
         // Create a new channel pair

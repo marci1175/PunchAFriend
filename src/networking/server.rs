@@ -260,7 +260,7 @@ fn setup_client_listener(
                         }
 
                         if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf[4..]) {
-                            client_request_channel.send((client_request, address)).unwrap();
+                            client_request_channel.send((dbg!(client_request), address)).unwrap();
                         }
                         else {
                             panic!("Received a message unsupported");

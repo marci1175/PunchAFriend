@@ -29,6 +29,7 @@ use punchafriend::{
     networking::client::ClientConnection,
     MapElement, UiMode,
 };
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
@@ -67,7 +68,7 @@ pub fn ui_system(
                                 .kind(egui_toast::ToastKind::Error)
                                 .text(format!(
                                     "Sending to endpoint handler thread failed: {}",
-                                    err
+                                    err.to_string()
                                 ))
                                 .options(
                                     ToastOptions::default()
@@ -76,7 +77,7 @@ pub fn ui_system(
                                 ),
                         );
 
-                        app_ctx.ui_mode = UiMode::PauseWindow;
+                        reset_connection_and_ui(&mut app_ctx);
                     }
                 }
             }
@@ -175,11 +176,7 @@ pub fn ui_system(
                             .add(egui::Button::new("Quit Server").frame(false))
                             .clicked()
                         {
-                            app_ctx.cancellation_token.cancel();
-
-                            app_ctx.client_connection = None;
-
-                            app_ctx.ui_mode = UiMode::MainMenu;
+                            reset_connection_and_ui(&mut app_ctx);
                         }
                     });
                 });
@@ -248,6 +245,16 @@ pub fn ui_system(
             }
         }
     }
+}
+
+fn reset_connection_and_ui(app_ctx: &mut ResMut<'_, ApplicationCtx>) {
+    app_ctx.cancellation_token.cancel();
+
+    app_ctx.client_connection = None;
+
+    app_ctx.ui_mode = UiMode::MainMenu;
+
+    app_ctx.cancellation_token = CancellationToken::new();
 }
 
 pub fn setup_game(

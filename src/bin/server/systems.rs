@@ -11,7 +11,8 @@ use bevy::{
     render::mesh::Mesh,
     sprite::ColorMaterial,
     time::Time,
-    transform::components::Transform, winit::{UpdateMode, WinitSettings},
+    transform::components::Transform,
+    winit::{UpdateMode, WinitSettings},
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{ActiveEvents, Collider, Velocity};
@@ -61,8 +62,8 @@ pub fn tick(
     // Increment global tick counter
     app_ctx.tick_count = app_ctx.tick_count.wrapping_add(1);
 
-    for (_entity, player, transform) in players.iter() {
-        if let Some(server_instance) = &app_ctx.server_instance {
+    if let Some(server_instance) = &app_ctx.server_instance {
+        for (_entity, player, transform) in players.iter() {
             let server_tick_update =
                 ServerTickUpdate::new(*transform, player.clone(), app_ctx.tick_count);
 
