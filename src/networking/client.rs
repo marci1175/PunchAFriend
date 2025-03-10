@@ -96,7 +96,7 @@ pub async fn setup_server_sender(
                 _ = cancellation_token.cancelled() => {
                     // Send the exit request to the server
                     send_game_action(udp_socket.clone(), GameInput::Exit, client_uuid).await;
-                    
+
                     break;
                 }
 

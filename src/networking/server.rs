@@ -11,9 +11,9 @@ use bevy_rapier2d::prelude::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use dashmap::DashMap;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncReadExt,
     net::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
         TcpListener, TcpSocket, TcpStream, UdpSocket,
@@ -144,7 +144,6 @@ pub fn setup_remote_client_handler(
         }
     });
 
-    
     let connected_clients_clone = client_game_socket_list.clone();
     tokio_runtime.spawn_background_task(|mut ctx| async move {
         loop {

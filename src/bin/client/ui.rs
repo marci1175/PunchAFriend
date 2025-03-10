@@ -192,7 +192,7 @@ pub fn ui_system(
             if client_connection.last_tick > server_tick_update.tick_count {
                 return;
             }
-            
+
             // Set the new tick count as the latest tick
             client_connection.last_tick = server_tick_update.tick_count;
 

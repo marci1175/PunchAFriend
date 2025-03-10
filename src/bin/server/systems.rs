@@ -11,8 +11,9 @@ use bevy::{
     render::mesh::Mesh,
     sprite::ColorMaterial,
     time::Time,
-    transform::components::Transform,
+    transform::components::Transform, winit::{UpdateMode, WinitSettings},
 };
+use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{ActiveEvents, Collider, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
@@ -51,21 +52,26 @@ pub fn tick(
     collision_groups: Res<CollisionGroupSet>,
     players: Query<(Entity, &Player, &Transform)>,
     time: Res<Time>,
+    mut framerate: ResMut<FramepaceSettings>,
     runtime: Res<TokioTasksRuntime>,
 ) {
+    // Add tick limiter
+    framerate.limiter = Limiter::from_framerate(120.);
+
     // Increment global tick counter
     app_ctx.tick_count = app_ctx.tick_count.wrapping_add(1);
 
     for (_entity, player, transform) in players.iter() {
         if let Some(server_instance) = &app_ctx.server_instance {
-            let server_tick_update = ServerTickUpdate::new(*transform, player.clone(), app_ctx.tick_count);
+            let server_tick_update =
+                ServerTickUpdate::new(*transform, player.clone(), app_ctx.tick_count);
 
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
 
             let message_length_bytes = (message_bytes.len() as u32).to_be_bytes();
 
             for client in server_instance.connected_client_game_sockets.iter() {
-                let addr = client.key().clone();
+                let addr = *client.key();
 
                 let udp_socket = server_instance.udp_socket.clone();
                 let message_bytes = message_bytes.clone();
@@ -239,4 +245,8 @@ pub fn check_for_collision_with_attack_object(
     for (ent, _) in attack_object_query.iter() {
         commands.entity(ent).despawn();
     }
+}
+
+pub fn setup_window(mut winit_settings: ResMut<WinitSettings>) {
+    winit_settings.unfocused_mode = UpdateMode::Continuous;
 }

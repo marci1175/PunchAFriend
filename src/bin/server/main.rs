@@ -18,6 +18,7 @@ fn main() {
         ..Default::default()
     }));
     app.add_plugins(EguiPlugin);
+    app.add_plugins(bevy_framepace::FramepacePlugin);
     app.add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default());
     app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0));
     app.add_plugins(RapierDebugRenderPlugin::default());
@@ -25,6 +26,7 @@ fn main() {
     app.insert_resource(ApplicationCtx::default());
     app.insert_resource(CollisionGroupSet::new());
 
+    app.add_systems(Startup, systems::setup_window);
     app.add_systems(Update, systems::tick);
     app.add_systems(Update, systems::reset_jump_remaining_for_player);
     app.add_systems(Update, systems::check_for_collision_with_attack_object);
