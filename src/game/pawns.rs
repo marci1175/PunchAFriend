@@ -196,8 +196,11 @@ pub struct Player {
     pub effects: Vec<Effect>,
 
     pub name: String,
+    
     pub jumps_remaining: u8,
+
     pub direction: Direction,
+
     pub combo_stats: Option<Combo>,
 
     pub id: Uuid,

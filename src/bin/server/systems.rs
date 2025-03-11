@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::{
     asset::Assets,
     core_pipeline::core_2d::Camera2d,
@@ -20,7 +22,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
-        combat::{AttackObject, AttackType},
+        combat::{AttackObject, AttackType, Combo},
         pawns::Player,
     },
     networking::ServerTickUpdate,
@@ -46,13 +48,8 @@ pub fn setup_game(
 }
 
 pub fn tick(
-    commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<ColorMaterial>>,
     mut app_ctx: ResMut<ApplicationCtx>,
-    collision_groups: Res<CollisionGroupSet>,
     players: Query<(Entity, &Player, &Transform)>,
-    time: Res<Time>,
     mut framerate: ResMut<FramepaceSettings>,
     runtime: Res<TokioTasksRuntime>,
 ) {
@@ -163,7 +160,7 @@ pub fn check_for_collision_with_map_and_player(
 pub fn check_for_collision_with_attack_object(
     mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
-    foreign_character_query: Query<(Entity, &mut Player, &Transform, &Velocity)>,
+    mut foreign_character_query: Query<(Entity, &mut Player, &Transform, &Velocity)>,
     attack_object_query: Query<(Entity, &AttackObject)>,
 ) {
     for collision in collision_events.read() {
@@ -179,15 +176,17 @@ pub fn check_for_collision_with_attack_object(
 
                 let foreign_character_query_result =
                     foreign_character_query
-                        .iter()
+                        .iter_mut()
                         .find(|(foreign_character_entity, _, _, _)| {
                             *foreign_character_entity == *entity
                                 || *foreign_character_entity == *entity1
+                        }).map(|(e, p, t, v)| {
+                            (e.clone(), p.clone(), t.clone(), v.clone())
                         });
 
                 if let (
                     Some((_attack_ent, attack_object)),
-                    Some((foreign_entity, _, foreign_char_transform, foreign_char_velocity)),
+                    Some((foreign_entity, _local_player, foreign_char_transform, foreign_char_velocity)),
                 ) = (attack_obj_query_result, foreign_character_query_result)
                 {
                     let mut colliding_entity_commands = commands.entity(foreign_entity);
@@ -203,15 +202,19 @@ pub fn check_for_collision_with_attack_object(
                         1.0
                     };
 
+                    let attacker_result = foreign_character_query.iter_mut().find(|(ent, _, _, _)| {
+                        *ent == attack_object.attack_by
+                    });
+
                     // Increment the local player's combo counter and reset its timer
-                    // if let Ok(mut local_player) = local_player.get_mut(attack_object.attack_by) {
-                    //     if let Some(combo_counter) = &mut local_player.combo_stats {
-                    //         combo_counter.combo_counter += 1;
-                    //         combo_counter.combo_timer.reset();
-                    //     } else {
-                    //         local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
-                    //     }
-                    // }
+                    if let Some((_, mut local_player, _, _)) = attacker_result {
+                        if let Some(combo_counter) = &mut local_player.combo_stats {
+                            combo_counter.combo_counter += 1;
+                            combo_counter.combo_timer.reset();
+                        } else {
+                            local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
+                        }
+                    }
 
                     colliding_entity_commands.insert(Velocity {
                         linvel: vec2(
