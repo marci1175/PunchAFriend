@@ -1,38 +1,30 @@
-use crate::{game::collision::CollisionGroupSet, server::ApplicationCtx, Direction};
+use crate::{game::collision::CollisionGroupSet, Direction, GameInput};
 use bevy::{
-    ecs::{
-        component::Component,
-        entity::Entity,
-        system::{Commands, Res, ResMut},
-        world::Mut,
-    },
-    input::{keyboard::KeyCode, ButtonInput},
+    ecs::{component::Component, entity::Entity, system::Commands, world::Mut},
     math::vec2,
     time::Time,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{Collider, KinematicCharacterController, Velocity};
+use rand::rngs::SmallRng;
 use std::time::Duration;
 use uuid::Uuid;
 
 use super::combat::{spawn_attack, Combo, Effect, EffectType};
 
 /// This function modifies the direction variable of the `LocalPlayer`, the variable is always the key last pressed by the user.
-pub fn set_movement_direction_var(
-    keyboard_input: &ButtonInput<KeyCode>,
-    local_player: &mut Mut<'_, Player>,
-) {
-    if keyboard_input.just_pressed(KeyCode::KeyD) {
+pub fn set_movement_direction_var(game_input: &GameInput, local_player: &mut Mut<'_, Player>) {
+    if *game_input == GameInput::MoveRight {
         // Update latest direction
         local_player.direction = Direction::Right;
     }
 
-    if keyboard_input.just_pressed(KeyCode::KeyA) {
+    if *game_input == GameInput::MoveLeft {
         // Update latest direction
         local_player.direction = Direction::Left;
     }
 
-    if keyboard_input.just_pressed(KeyCode::KeyW) {
+    if *game_input == GameInput::MoveJump {
         // Update latest direction
         local_player.direction = Direction::Up;
     }
@@ -41,11 +33,11 @@ pub fn set_movement_direction_var(
 /// Handles the local player's input and modifying the controller of the Entity according to the input given.
 pub fn player_movement(
     commands: &mut Commands<'_, '_>,
-    keyboard_input: &ButtonInput<KeyCode>,
-    time: &Res<'_, Time>,
+    game_input: &GameInput,
+    time: &Time,
     entity: Entity,
     player: &mut Mut<'_, Player>,
-    mut controller: Mut<'_, KinematicCharacterController>,
+    controller: &mut KinematicCharacterController,
 ) {
     let move_factor = 450. * {
         if player.has_effect(EffectType::Slowdown) {
@@ -55,12 +47,12 @@ pub fn player_movement(
         }
     };
 
-    if keyboard_input.pressed(KeyCode::KeyA) {
+    if *game_input == GameInput::MoveLeft {
         // Move the local player to the left
         controller.translation = Some(vec2(-move_factor * time.delta_secs(), 0.));
     }
 
-    if keyboard_input.pressed(KeyCode::KeyD) {
+    if *game_input == GameInput::MoveRight {
         // Move the local player to the right
         controller.translation = Some(vec2(move_factor * time.delta_secs(), 0.));
     }
@@ -68,8 +60,8 @@ pub fn player_movement(
     // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
     // If there are no more jumps remaining the user needs to wait until they touch a MapObject again. This indicates they've landed.
     // If the user is holding W the entitiy should automaticly jump once on the ground.
-    if keyboard_input.just_pressed(KeyCode::KeyW) && player.jumps_remaining != 0
-        || keyboard_input.pressed(KeyCode::KeyW) && player.jumps_remaining == 2
+    if *game_input == GameInput::MoveJump && player.jumps_remaining != 0
+        || *game_input == GameInput::MoveJump && player.jumps_remaining == 2
     {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., 500.),
@@ -82,11 +74,11 @@ pub fn player_movement(
 
 /// Handles the local player's attack
 pub fn player_attack(
-    commands: Commands<'_, '_>,
-    collision_groups: Res<'_, CollisionGroupSet>,
-    app_ctx: ResMut<'_, ApplicationCtx>,
+    commands: &mut Commands,
+    collision_groups: &CollisionGroupSet,
+    rand: &mut SmallRng,
     entity: Entity,
-    local_player: &mut Mut<'_, Player>,
+    local_player: &mut Player,
     transform: &Transform,
 ) {
     let (attack_collider_width, attack_collider_height) = (50., 50.);
@@ -119,7 +111,7 @@ pub fn player_attack(
     spawn_attack(
         commands,
         collision_groups,
-        app_ctx,
+        rand,
         entity,
         local_player,
         transform,
@@ -128,39 +120,31 @@ pub fn player_attack(
     );
 }
 
-pub fn player_handle(
-    query: (
+pub fn handle_game_input(
+    query: &mut (
         Entity,
         Mut<Player>,
         Mut<KinematicCharacterController>,
         &Transform,
     ),
-    mut commands: Commands,
-    keyboard_input: ButtonInput<KeyCode>,
-    collision_groups: Res<CollisionGroupSet>,
-    app_ctx: ResMut<ApplicationCtx>,
-    time: Res<Time>,
+    commands: &mut Commands,
+    game_input: GameInput,
+    collision_groups: &CollisionGroupSet,
+    rand: &mut SmallRng,
+    time: &Time,
 ) {
     // Unpack the tuple created by the tuple
-    let (entity, mut player, controller, transform) = query;
+    let (entity, ref mut player, controller, transform) = query;
 
     if !player.has_effect(EffectType::Stunned) {
         // Handle the movement of the LocalPlayer
-        player_movement(
-            &mut commands,
-            &keyboard_input,
-            &time,
-            entity,
-            &mut player,
-            controller,
-        );
+        player_movement(commands, &game_input, time, *entity, player, controller);
 
         // Set the variables for the LocalPlayer
-        set_movement_direction_var(&keyboard_input, &mut player);
+        set_movement_direction_var(&game_input, player);
 
-        // For this key, it does not matter if its checked with `just_pressed()` or `pressed()`, so we can avoid double checking by just doing both under one check.
-        if keyboard_input.just_pressed(KeyCode::KeyS) {
-            commands.entity(entity).insert(Velocity {
+        if game_input == GameInput::MoveDuck {
+            commands.entity(*entity).insert(Velocity {
                 linvel: vec2(0., -500.),
                 angvel: 0.5,
             });
@@ -171,13 +155,13 @@ pub fn player_handle(
     }
 
     // if the player is attacking, handle the local player's attack
-    if keyboard_input.just_pressed(KeyCode::Space) {
+    if game_input == GameInput::Attack {
         player_attack(
             commands,
             collision_groups,
-            app_ctx,
-            entity,
-            &mut player,
+            rand,
+            *entity,
+            player,
             transform,
         );
     }
@@ -196,7 +180,7 @@ pub struct Player {
     pub effects: Vec<Effect>,
 
     pub name: String,
-    
+
     pub jumps_remaining: u8,
 
     pub direction: Direction,

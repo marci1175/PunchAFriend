@@ -114,18 +114,19 @@ pub fn ui_system(
 
     if let Ok(server_instance) = app_ctx.server_instance_receiver.try_recv() {
         match server_instance {
-            Ok(server_instance) => {
-                app_ctx.server_instance = Some(server_instance.clone());
+            Ok(mut server_instance) => {
                 // Initalize game
                 setup_game(commands, meshes, materials, &collision_groups);
 
                 // Initalize server threads
                 setup_remote_client_handler(
-                    server_instance,
+                    &mut server_instance,
                     runtime,
                     app_ctx.cancellation_token.clone(),
                     collision_groups.clone(),
                 );
+
+                app_ctx.server_instance = Some(server_instance);
             }
             Err(err) => {}
         }

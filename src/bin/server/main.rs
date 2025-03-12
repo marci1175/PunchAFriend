@@ -7,7 +7,10 @@ use bevy_rapier2d::{
     plugin::{NoUserData, RapierPhysicsPlugin},
     render::RapierDebugRenderPlugin,
 };
-use punchafriend::{game::collision::CollisionGroupSet, server::ApplicationCtx};
+use punchafriend::{
+    game::{collision::CollisionGroupSet, RandomEngine},
+    server::ApplicationCtx,
+};
 
 fn main() {
     let mut app = App::new();
@@ -25,6 +28,7 @@ fn main() {
 
     app.insert_resource(ApplicationCtx::default());
     app.insert_resource(CollisionGroupSet::new());
+    app.insert_resource(RandomEngine::new());
 
     app.add_systems(Startup, systems::setup_window);
     app.add_systems(Update, systems::tick);

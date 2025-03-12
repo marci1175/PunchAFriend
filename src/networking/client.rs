@@ -21,7 +21,7 @@ use super::{write_to_buf_with_len, EndpointMetadata, ServerMetadata};
 pub struct ClientConnection {
     pub server_metadata: ServerMetadata,
 
-    pub sender_thread_handle: Sender<GameInput>,
+    pub sender_thread_handle: Sender<Vec<GameInput>>,
 
     pub main_thread_handle: Receiver<ServerTickUpdate>,
 
@@ -56,12 +56,12 @@ impl ClientConnection {
         udp_socket
             .connect(SocketAddr::new(
                 dest_address.ip(),
-                server_metadata.game_socket_port
+                server_metadata.game_socket_port,
             ))
             .await?;
 
         // Create a new channel pair
-        let (sender, receiver) = channel::<GameInput>(2000);
+        let (sender, receiver) = channel::<Vec<GameInput>>(2000);
 
         setup_server_sender(
             receiver,
@@ -85,7 +85,7 @@ impl ClientConnection {
 }
 
 pub async fn setup_server_sender(
-    mut receiver: Receiver<GameInput>,
+    mut receiver: Receiver<Vec<GameInput>>,
     cancellation_token: CancellationToken,
     udp_socket: Arc<UdpSocket>,
     client_uuid: Uuid,
@@ -95,7 +95,7 @@ pub async fn setup_server_sender(
             select! {
                 _ = cancellation_token.cancelled() => {
                     // Send the exit request to the server
-                    send_game_action(udp_socket.clone(), GameInput::Exit, client_uuid).await;
+                    send_game_action(udp_socket.clone(), vec![GameInput::Exit], client_uuid).await;
 
                     break;
                 }
@@ -167,10 +167,10 @@ async fn exchange_metadata(
     Ok(server_metadata)
 }
 
-async fn send_game_action(send: Arc<UdpSocket>, game_input: GameInput, uuid: Uuid) {
+async fn send_game_action(send: Arc<UdpSocket>, game_input: Vec<GameInput>, uuid: Uuid) {
     let message_bytes = rmp_serde::to_vec(&RemoteClientRequest {
         id: uuid,
-        action: game_input,
+        inputs: game_input,
     })
     .unwrap();
 

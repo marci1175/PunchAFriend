@@ -1,13 +1,9 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use bevy::{
-    ecs::{entity::Entity, system::ResMut},
-    math::vec2,
-    transform::components::Transform,
-};
+use bevy::{ecs::system::ResMut, transform::components::Transform};
 use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
-    LockedAxes, RigidBody, Velocity,
+    LockedAxes, RigidBody,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use dashmap::DashMap;
@@ -19,7 +15,10 @@ use tokio::{
         TcpListener, TcpSocket, TcpStream, UdpSocket,
     },
     select,
-    sync::broadcast::{channel, Sender},
+    sync::{
+        mpsc::Receiver,
+        mpsc::{channel, Sender},
+    },
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -27,7 +26,6 @@ use uuid::Uuid;
 use crate::{
     game::{collision::CollisionGroupSet, pawns::Player},
     networking::UDP_DATAGRAM_SIZE,
-    GameInput,
 };
 
 use super::{write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, ServerMetadata};
@@ -47,13 +45,14 @@ impl RemoteGameClient {
     }
 }
 
-#[derive(Clone)]
 pub struct ServerInstance {
     pub tcp_listener: Arc<Mutex<TcpListener>>,
     pub udp_socket: Arc<UdpSocket>,
 
     pub metadata: EndpointMetadata,
     pub tcp_listener_port: u16,
+
+    pub server_receiver: Option<Receiver<(RemoteClientRequest, SocketAddr)>>,
 
     pub connected_client_game_sockets: Arc<DashMap<SocketAddr, Uuid>>,
 }
@@ -70,12 +69,13 @@ impl ServerInstance {
 
         let udp_socket = UdpSocket::bind("[::]:0").await?;
 
-        let udp_socket_port = dbg!(udp_socket.local_addr()?).port();
+        let udp_socket_port = udp_socket.local_addr()?.port();
 
         Ok(Self {
             tcp_listener: Arc::new(Mutex::new(tcp_listener)),
             udp_socket: Arc::new(udp_socket),
             tcp_listener_port,
+            server_receiver: None,
             metadata: EndpointMetadata::new(udp_socket_port),
             connected_client_game_sockets: Arc::new(DashMap::new()),
         })
@@ -83,7 +83,7 @@ impl ServerInstance {
 }
 
 pub fn setup_remote_client_handler(
-    server_instance: ServerInstance,
+    server_instance: &mut ServerInstance,
     tokio_runtime: ResMut<TokioTasksRuntime>,
     cancellation_token: CancellationToken,
     collision_groups: CollisionGroupSet,
@@ -93,7 +93,7 @@ pub fn setup_remote_client_handler(
     let client_game_socket_list: Arc<DashMap<SocketAddr, Uuid>> =
         server_instance.connected_client_game_sockets.clone();
 
-    let (sender, mut receiver) = channel::<(RemoteClientRequest, SocketAddr)>(2000);
+    let (sender, receiver) = channel::<(RemoteClientRequest, SocketAddr)>(2000);
 
     let cancellation_token_clone = cancellation_token.clone();
 
@@ -101,6 +101,8 @@ pub fn setup_remote_client_handler(
 
     let metadata = server_instance.metadata;
     let connected_clients_clone = client_game_socket_list.clone();
+
+    server_instance.server_receiver = Some(receiver);
 
     // Spawn the incoming connection accepter thread
     tokio_runtime.spawn_background_task(move |mut ctx| async move {        
@@ -139,73 +141,6 @@ pub fn setup_remote_client_handler(
                             .insert(Player::new_from_id(uuid)); 
                         }).await;
                     }
-                }
-            }
-        }
-    });
-
-    let connected_clients_clone = client_game_socket_list.clone();
-    tokio_runtime.spawn_background_task(|mut ctx| async move {
-        loop {
-            select! {
-                _ = cancellation_token.cancelled() => {
-                    break;
-                },
-                
-                Ok((remote_client_request, address)) = receiver.recv() => {
-                    let connected_clients_clone = connected_clients_clone.clone();
-
-                    // Access the main thread from the async thread
-                    ctx.run_on_main_thread(move |main_ctx| {
-                        // Create a query from the world in the main thread
-                        let mut query = main_ctx.world.query::<(Entity, &mut Player)>();
-                        
-                        let query_list: Vec<(Entity, Player)> = query.iter(main_ctx.world).map(|(ent, p)| (ent, p.clone())).collect();
-                        
-                        // iterate over all the query results
-                        for (entity, player) in query_list.iter() {
-                            // This is the remote client's pawn.
-                            if player.id == remote_client_request.id {
-                                let mut commands = main_ctx.world.commands();
-
-                                let mut entity_commands = commands.entity(*entity);
-
-                                match remote_client_request.action {
-                                    GameInput::Jump => {
-                                        entity_commands.insert(Velocity {
-                                            linvel: vec2(0., 500.),
-                                            angvel: 0.5,
-                                        });
-                                    
-                                        // player.jumps_remaining -= 1;
-                                    },
-                                    GameInput::Duck => {
-
-                                    },
-                                    GameInput::Right => {
-
-                                    },
-                                    GameInput::Left => {
-
-                                    },
-                                    GameInput::Attack => {
-
-                                    },
-                                    GameInput::Defend => {
-
-                                    },
-                                    GameInput::Exit => {
-                                        entity_commands.despawn();
-
-                                        connected_clients_clone.remove(&address);
-                                    }
-                                    GameInput::Join => {
-                                        panic!()
-                                    }
-                                }
-                            }
-                        }
-                    }).await;
                 }
             }
         }
@@ -260,7 +195,7 @@ fn setup_client_listener(
                         }
 
                         if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf[4..]) {
-                            client_request_channel.send((client_request, address)).unwrap();
+                            client_request_channel.send((client_request, address)).await.unwrap();
                         }
                         else {
                             panic!("Received a message unsupported");

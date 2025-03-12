@@ -1,18 +1,14 @@
 use bevy::{
-    ecs::{
-        component::Component,
-        entity::Entity,
-        system::{Commands, Res, ResMut},
-    },
+    ecs::{component::Component, entity::Entity, system::Commands},
     time::Timer,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{ActiveEvents, Collider};
-use rand::Rng;
+use rand::{rngs::SmallRng, Rng};
 use std::time::Duration;
 use strum::EnumDiscriminants;
 
-use crate::{game::collision::CollisionGroupSet, server::ApplicationCtx, Direction};
+use crate::{game::collision::CollisionGroupSet, Direction};
 
 use super::pawns::Player;
 
@@ -102,9 +98,9 @@ pub enum EffectType {
 
 /// Spawns in a Cuboid and then the collisions are checked so that we know which enemies are affected.
 pub fn spawn_attack(
-    mut commands: Commands<'_, '_>,
-    collision_groups: Res<'_, CollisionGroupSet>,
-    mut app_ctx: ResMut<'_, ApplicationCtx>,
+    commands: &mut Commands,
+    collision_groups: &CollisionGroupSet,
+    rand: &mut SmallRng,
     entity: Entity,
     local_player: &mut Player,
     transform: &Transform,
@@ -117,7 +113,7 @@ pub fn spawn_attack(
         .insert(ActiveEvents::CONTACT_FORCE_EVENTS)
         .insert(AttackObject::new(
             AttackType::Directional(local_player.direction),
-            app_ctx.rand.random_range(14.0..21.0),
+            rand.random_range(14.0..21.0),
             *transform,
             entity,
         ))

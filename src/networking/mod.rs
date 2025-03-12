@@ -10,7 +10,7 @@ pub mod server;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RemoteClientRequest {
     pub id: Uuid,
-    pub action: GameInput,
+    pub inputs: Vec<GameInput>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

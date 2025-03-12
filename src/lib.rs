@@ -152,11 +152,12 @@ pub mod client {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum GameInput {
-    Jump,
-    Duck,
-    Right,
-    Left,
+    MoveJump,
+    MoveDuck,
+    MoveRight,
+    MoveLeft,
     Attack,
+    
     Defend,
 
     Join,

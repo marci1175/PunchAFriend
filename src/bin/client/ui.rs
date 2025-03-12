@@ -24,10 +24,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use egui_toast::{Toast, ToastOptions};
 
 use punchafriend::{
-    client::ApplicationCtx,
-    game::{collision::CollisionGroupSet, pawns::Player},
-    networking::client::ClientConnection,
-    MapElement, UiMode,
+    client::ApplicationCtx, game::{collision::CollisionGroupSet, pawns::Player}, networking::client::ClientConnection, GameInput, MapElement, UiMode
 };
 use tokio_util::sync::CancellationToken;
 
@@ -58,17 +55,31 @@ pub fn ui_system(
         UiMode::Game => {
             // Send the inputs to the sender thread
             if let Some(client_connection) = &app_ctx.client_connection {
-                if keyboard_input.just_pressed(KeyCode::Space) {
-                    if let Err(err) = client_connection
+                let mut game_inputs: Vec<GameInput> = vec![];
+
+                for pressed in keyboard_input.get_pressed() {
+                    match pressed {
+                        KeyCode::Space => game_inputs.push(GameInput::Attack),
+                        KeyCode::KeyD => game_inputs.push(GameInput::MoveRight),
+                        KeyCode::KeyA => game_inputs.push(GameInput::MoveLeft),
+                        KeyCode::KeyW => game_inputs.push(GameInput::MoveJump),
+                        KeyCode::KeyS => game_inputs.push(GameInput::MoveDuck),
+                        _ => {
+                            continue;
+                        }
+                    }
+                }
+
+                if let Err(err) = client_connection
                         .sender_thread_handle
-                        .try_send(punchafriend::GameInput::Jump)
+                        .try_send(game_inputs)
                     {
                         app_ctx.egui_toasts.add(
                             Toast::new()
                                 .kind(egui_toast::ToastKind::Error)
                                 .text(format!(
                                     "Sending to endpoint handler thread failed: {}",
-                                    err.to_string()
+                                    err
                                 ))
                                 .options(
                                     ToastOptions::default()
@@ -79,7 +90,6 @@ pub fn ui_system(
 
                         reset_connection_and_ui(&mut app_ctx);
                     }
-                }
             }
 
             // Check for pause key

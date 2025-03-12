@@ -8,6 +8,7 @@ use bevy::{
         event::EventReader,
         query::With,
         system::{Commands, Query, Res, ResMut},
+        world::Mut,
     },
     math::vec2,
     render::mesh::Mesh,
@@ -17,17 +18,15 @@ use bevy::{
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
-use bevy_rapier2d::prelude::{ActiveEvents, Collider, Velocity};
+use bevy_rapier2d::prelude::{ActiveEvents, Collider, KinematicCharacterController, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
         combat::{AttackObject, AttackType, Combo},
-        pawns::Player,
-    },
-    networking::ServerTickUpdate,
-    server::ApplicationCtx,
-    Direction, MapElement,
+        pawns::{handle_game_input, Player},
+        RandomEngine,
+    }, networking::ServerTickUpdate, server::ApplicationCtx, Direction, GameInput, MapElement
 };
 
 pub fn setup_game(
@@ -48,21 +47,67 @@ pub fn setup_game(
 }
 
 pub fn tick(
+    mut commands: Commands,
     mut app_ctx: ResMut<ApplicationCtx>,
-    players: Query<(Entity, &Player, &Transform)>,
+    mut players_query: Query<(
+        Entity,
+        Mut<Player>,
+        Mut<KinematicCharacterController>,
+        &Transform,
+    )>,
     mut framerate: ResMut<FramepaceSettings>,
+    mut rand: ResMut<RandomEngine>,
     runtime: Res<TokioTasksRuntime>,
+    collision_groups: Res<CollisionGroupSet>,
+    time: Res<Time>,
 ) {
     // Add tick limiter
     framerate.limiter = Limiter::from_framerate(120.);
 
     // Increment global tick counter
-    app_ctx.tick_count = app_ctx.tick_count.wrapping_add(1);
+    let current_tick_count = app_ctx.tick_count.wrapping_add(1);
 
-    if let Some(server_instance) = &app_ctx.server_instance {
-        for (_entity, player, transform) in players.iter() {
+    // Set the global tick count
+    app_ctx.tick_count = current_tick_count;
+
+    if let Some(server_instance) = &mut app_ctx.server_instance {
+        if let Some(remote_receiver) = &mut server_instance.server_receiver {
+            let connected_clients_clone = server_instance.connected_client_game_sockets.clone();
+
+            while let Ok((client_req, address)) = remote_receiver.try_recv() {
+                for mut query_item in players_query.iter_mut() {
+                    // If the current player we are iterating on doesn't match the id provided by the client request countinue the iteration.
+                    if query_item.1.id != query_item.1.id {
+                        continue;
+                    }
+
+                    for action in &client_req.inputs {
+                        handle_game_input(
+                            &mut query_item,
+                            &mut commands,
+                            *action,
+                            &collision_groups,
+                            &mut rand.inner,
+                            &time,
+                        );
+
+                        if *action == GameInput::Exit {
+                            let mut entity_commands = commands.entity(query_item.0);
+                            
+                            entity_commands.despawn();
+
+                            connected_clients_clone.remove(&address);
+
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (_entity, player, _, transform) in players_query.iter() {
             let server_tick_update =
-                ServerTickUpdate::new(*transform, player.clone(), app_ctx.tick_count);
+                ServerTickUpdate::new(*transform, player.clone(), current_tick_count);
 
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
 
@@ -174,19 +219,22 @@ pub fn check_for_collision_with_attack_object(
                     .iter()
                     .find(|(attck_ent, _)| *attck_ent == *entity || *attck_ent == *entity1);
 
-                let foreign_character_query_result =
-                    foreign_character_query
-                        .iter_mut()
-                        .find(|(foreign_character_entity, _, _, _)| {
-                            *foreign_character_entity == *entity
-                                || *foreign_character_entity == *entity1
-                        }).map(|(e, p, t, v)| {
-                            (e.clone(), p.clone(), t.clone(), v.clone())
-                        });
+                let foreign_character_query_result = foreign_character_query
+                    .iter_mut()
+                    .find(|(foreign_character_entity, _, _, _)| {
+                        *foreign_character_entity == *entity
+                            || *foreign_character_entity == *entity1
+                    })
+                    .map(|(e, p, t, v)| (e, p.clone(), *t, *v));
 
                 if let (
                     Some((_attack_ent, attack_object)),
-                    Some((foreign_entity, _local_player, foreign_char_transform, foreign_char_velocity)),
+                    Some((
+                        foreign_entity,
+                        _local_player,
+                        foreign_char_transform,
+                        foreign_char_velocity,
+                    )),
                 ) = (attack_obj_query_result, foreign_character_query_result)
                 {
                     let mut colliding_entity_commands = commands.entity(foreign_entity);
@@ -202,9 +250,9 @@ pub fn check_for_collision_with_attack_object(
                         1.0
                     };
 
-                    let attacker_result = foreign_character_query.iter_mut().find(|(ent, _, _, _)| {
-                        *ent == attack_object.attack_by
-                    });
+                    let attacker_result = foreign_character_query
+                        .iter_mut()
+                        .find(|(ent, _, _, _)| *ent == attack_object.attack_by);
 
                     // Increment the local player's combo counter and reset its timer
                     if let Some((_, mut local_player, _, _)) = attacker_result {
