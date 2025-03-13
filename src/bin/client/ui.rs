@@ -24,7 +24,10 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use egui_toast::{Toast, ToastOptions};
 
 use punchafriend::{
-    client::ApplicationCtx, game::{collision::CollisionGroupSet, pawns::Player}, networking::client::ClientConnection, GameInput, MapElement, UiMode
+    client::ApplicationCtx,
+    game::{collision::CollisionGroupSet, pawns::Player},
+    networking::client::ClientConnection,
+    GameInput, MapElement, UiMode,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -70,26 +73,23 @@ pub fn ui_system(
                     }
                 }
 
-                if let Err(err) = client_connection
-                        .sender_thread_handle
-                        .try_send(game_inputs)
-                    {
-                        app_ctx.egui_toasts.add(
-                            Toast::new()
-                                .kind(egui_toast::ToastKind::Error)
-                                .text(format!(
-                                    "Sending to endpoint handler thread failed: {}",
-                                    err
-                                ))
-                                .options(
-                                    ToastOptions::default()
-                                        .duration(Some(Duration::from_secs(3)))
-                                        .show_progress(true),
-                                ),
-                        );
+                if let Err(err) = client_connection.server_input_sender.try_send(game_inputs) {
+                    app_ctx.egui_toasts.add(
+                        Toast::new()
+                            .kind(egui_toast::ToastKind::Error)
+                            .text(format!(
+                                "Sending to endpoint handler thread failed: {}",
+                                err
+                            ))
+                            .options(
+                                ToastOptions::default()
+                                    .duration(Some(Duration::from_secs(3)))
+                                    .show_progress(true),
+                            ),
+                    );
 
-                        reset_connection_and_ui(&mut app_ctx);
-                    }
+                    reset_connection_and_ui(&mut app_ctx);
+                }
             }
 
             // Check for pause key
@@ -179,8 +179,11 @@ pub fn ui_system(
                 .fixed_size(ctx.screen_rect().size() / 3.)
                 .show(ctx, |ui| {
                     ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
-                        ui.add(egui::Button::new("Resume").frame(false));
-                        ui.add(egui::Button::new("Options").frame(false));
+                        if ui.add(egui::Button::new("Resume").frame(false)).clicked() {
+                            app_ctx.ui_mode = UiMode::Game;
+                        }
+
+                        ui.add(egui::Button::new("Options").frame(false)).clicked();
 
                         if ui
                             .add(egui::Button::new("Quit Server").frame(false))
@@ -194,7 +197,7 @@ pub fn ui_system(
     }
 
     if let Some(client_connection) = &mut app_ctx.client_connection {
-        if let Ok(server_tick_update) = client_connection.main_thread_handle.try_recv() {
+        if let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
             // If the tick we have received is older than the newest one we have we drop it.
             if client_connection.last_tick > server_tick_update.tick_count {
                 return;
@@ -226,11 +229,36 @@ pub fn ui_system(
                     .insert(server_tick_update.player);
             }
         }
+    
+        if let Ok(remote_request) = client_connection.remote_receiver.try_recv() {
+            let uuid = remote_request.id;
+
+            match remote_request.request {
+                punchafriend::networking::ServerRequest::PlayerDisconnect => {
+                    // Find the Entity with the designated uuid
+                    for (entity, player, _) in players.iter() {
+                        // Check for the correct uuid
+                        if player.id == uuid {
+                            // Despawn the entity
+                            commands.entity(entity).despawn();
+
+                            break;
+                        }
+                    }
+                },
+            }
+        }
     } else {
         // Try receiving the incoming successful connection to the remote address.
         if let Ok(connection) = app_ctx.connection_receiver.try_recv() {
             match connection {
                 Ok(client_connection) => {
+                    // Iterate over all of the players
+                    for (entity, _, _) in players.iter() {
+                        // Despawn all of the existing players, to clear out players left from a different match
+                        commands.entity(entity).despawn();
+                    }
+                    
                     // Set the window to be displaying game
                     app_ctx.ui_mode = UiMode::Game;
 
@@ -238,7 +266,7 @@ pub fn ui_system(
                     app_ctx.client_connection = Some(client_connection);
 
                     // Game setup was handled here, now its at startup. If we want changing maps we want to modify this.
-                    // setup_game(commands, meshes, materials, &collision_groups);
+                    // setup_game(commands, meshes, materials, collision_groups);
                 }
                 Err(error) => {
                     app_ctx.egui_toasts.add(

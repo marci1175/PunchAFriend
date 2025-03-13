@@ -14,6 +14,17 @@ pub struct RemoteClientRequest {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct RemoteServerRequest {
+    pub id: Uuid,
+    pub request: ServerRequest,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum ServerRequest {
+    PlayerDisconnect,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ServerTickUpdate {
     pub transform: Transform,
     pub player: Player,

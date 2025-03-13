@@ -10,15 +10,9 @@ use dashmap::DashMap;
 use parking_lot::Mutex;
 use tokio::{
     io::AsyncReadExt,
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpListener, TcpSocket, TcpStream, UdpSocket,
-    },
+    net::{TcpListener, TcpSocket, TcpStream, UdpSocket},
     select,
-    sync::{
-        mpsc::Receiver,
-        mpsc::{channel, Sender},
-    },
+    sync::mpsc::{channel, Receiver, Sender},
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -28,7 +22,7 @@ use crate::{
     networking::UDP_DATAGRAM_SIZE,
 };
 
-use super::{write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, ServerMetadata};
+use super::{write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, RemoteServerRequest, ServerMetadata, ServerRequest};
 
 #[derive(Debug, Clone)]
 pub struct RemoteGameClient {
@@ -54,7 +48,7 @@ pub struct ServerInstance {
 
     pub server_receiver: Option<Receiver<(RemoteClientRequest, SocketAddr)>>,
 
-    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, Uuid>>,
+    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
 }
 
 impl ServerInstance {
@@ -90,8 +84,7 @@ pub fn setup_remote_client_handler(
 ) {
     let tcp_listener = server_instance.tcp_listener.clone();
 
-    let client_game_socket_list: Arc<DashMap<SocketAddr, Uuid>> =
-        server_instance.connected_client_game_sockets.clone();
+    let client_game_socket_list = server_instance.connected_client_game_sockets.clone();
 
     let (sender, receiver) = channel::<(RemoteClientRequest, SocketAddr)>(2000);
 
@@ -114,13 +107,11 @@ pub fn setup_remote_client_handler(
                     break;
                 },
 
-                Ok((tcp_stream, socket_addr)) = handle_incoming_request(tcp_listener.clone()) => {
+                Ok((mut tcp_stream, socket_addr)) = handle_incoming_request(tcp_listener.clone()) => {
                     let uuid = Uuid::new_v4();
 
-                    let (mut read, mut write) = tcp_stream.into_split();
-
-                    if let Ok(client_metadata) = exchange_metadata(&mut write, &mut read, metadata.into_server_metadata(uuid)).await {
-                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), uuid);
+                    if let Ok(client_metadata) = exchange_metadata(&mut tcp_stream, metadata.into_server_metadata(uuid)).await {
+                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, tcp_stream));
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -159,7 +150,7 @@ fn setup_client_listener(
     socket: Arc<UdpSocket>,
     cancellation_token: CancellationToken,
     client_request_channel: Sender<(RemoteClientRequest, SocketAddr)>,
-    connected_clients: Arc<DashMap<SocketAddr, Uuid>>,
+    connected_clients: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -211,21 +202,34 @@ fn setup_client_listener(
 }
 
 async fn exchange_metadata(
-    send: &mut OwnedWriteHalf,
-    read: &mut OwnedReadHalf,
+    tcp_stream: &mut TcpStream,
     metadata: ServerMetadata,
 ) -> anyhow::Result<EndpointMetadata> {
     let slice = rmp_serde::to_vec(&metadata)?;
 
-    write_to_buf_with_len(send, &slice).await?;
+    write_to_buf_with_len(tcp_stream, &slice).await?;
 
-    let metadata_length = read.read_u32().await?;
+    let metadata_length = tcp_stream.read_u32().await?;
 
     let mut buf = vec![0; metadata_length as usize];
 
-    read.read_exact(&mut buf).await?;
+    tcp_stream.read_exact(&mut buf).await?;
 
     let client_metadata = rmp_serde::from_slice::<EndpointMetadata>(&buf)?;
 
     Ok(client_metadata)
+}
+
+pub async fn notify_client_about_player_disconnect(
+    tcp_stream: &mut TcpStream,
+    uuid: Uuid,
+) -> anyhow::Result<()> {
+    let message = RemoteServerRequest {
+        id: uuid,
+        request: ServerRequest::PlayerDisconnect,
+    };
+
+    write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;
+
+    Ok(())
 }

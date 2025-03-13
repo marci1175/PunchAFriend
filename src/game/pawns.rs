@@ -156,14 +156,7 @@ pub fn handle_game_input(
 
     // if the player is attacking, handle the local player's attack
     if game_input == GameInput::Attack {
-        player_attack(
-            commands,
-            collision_groups,
-            rand,
-            *entity,
-            player,
-            transform,
-        );
+        player_attack(commands, collision_groups, rand, *entity, player, transform);
     }
 
     // Increment effects

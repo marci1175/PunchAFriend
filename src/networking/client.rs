@@ -15,15 +15,17 @@ use crate::{
     GameInput,
 };
 
-use super::{write_to_buf_with_len, EndpointMetadata, ServerMetadata};
+use super::{write_to_buf_with_len, EndpointMetadata, RemoteServerRequest, ServerMetadata};
 
 #[derive(Resource)]
 pub struct ClientConnection {
     pub server_metadata: ServerMetadata,
 
-    pub sender_thread_handle: Sender<Vec<GameInput>>,
+    pub server_input_sender: Sender<Vec<GameInput>>,
 
-    pub main_thread_handle: Receiver<ServerTickUpdate>,
+    pub server_tick_receiver: Receiver<ServerTickUpdate>,
+
+    pub remote_receiver: Receiver<RemoteServerRequest>,
 
     pub last_tick: u64,
 }
@@ -52,6 +54,11 @@ impl ClientConnection {
         // We will send the UdpSocket's port and the server will send our unique uuid, and the port of the Server's UdpSocket.
         let server_metadata = exchange_metadata(&mut tcp_stream, client_metadata).await?;
 
+        // Create a new channel pair for managing server main instructions
+        let (remote_sender, remote_receiver) = channel::<RemoteServerRequest>(2000);
+
+        setup_server_instruction_listener(tcp_stream, cancellation_token.clone(), remote_sender).await;
+
         // Connect to the destination address
         udp_socket
             .connect(SocketAddr::new(
@@ -60,7 +67,7 @@ impl ClientConnection {
             ))
             .await?;
 
-        // Create a new channel pair
+        // Create a new channel pair for managing inputs
         let (sender, receiver) = channel::<Vec<GameInput>>(2000);
 
         setup_server_sender(
@@ -73,12 +80,13 @@ impl ClientConnection {
 
         let (client_sender, client_receiver) = channel::<ServerTickUpdate>(2000);
 
-        setup_server_listener(cancellation_token, udp_socket, client_sender).await;
+        setup_server_game_listener(cancellation_token, udp_socket, client_sender).await;
 
         Ok(ClientConnection {
             server_metadata,
-            sender_thread_handle: sender,
-            main_thread_handle: client_receiver,
+            server_input_sender: sender,
+            server_tick_receiver: client_receiver,
+            remote_receiver,
             last_tick: 0,
         })
     }
@@ -108,7 +116,7 @@ pub async fn setup_server_sender(
     });
 }
 
-pub async fn setup_server_listener(
+pub async fn setup_server_game_listener(
     cancellation_token: CancellationToken,
     socket: Arc<UdpSocket>,
     client_sender: Sender<ServerTickUpdate>,
@@ -133,6 +141,32 @@ pub async fn setup_server_listener(
 
                     // This will return a SendError if the receiver is dropped before the select is completed.
                     let _ = client_sender.send(remote_client_request).await;
+                }
+            }
+        }
+    });
+}
+
+async fn setup_server_instruction_listener(
+    mut tcp_stream: TcpStream,
+    cancellation_token: CancellationToken,
+    remote_sender: Sender<RemoteServerRequest>,
+) {
+    tokio::spawn(async move {
+        loop {
+            select! {
+                _ = cancellation_token.cancelled() => {
+                    break;
+                }
+
+                Ok(message_length) = tcp_stream.read_u32() => {
+                    let mut buf = vec![0; message_length as usize];
+
+                    tcp_stream.read_exact(&mut buf).await.unwrap();
+
+                    let request = rmp_serde::from_slice::<RemoteServerRequest>(&buf).unwrap();
+
+                    remote_sender.send(request).await.unwrap();
                 }
             }
         }

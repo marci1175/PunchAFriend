@@ -1,6 +1,7 @@
 pub mod game;
 pub mod networking;
 
+
 use bevy::{ecs::component::Component, math::Vec2};
 
 #[derive(Component, Clone)]
@@ -157,7 +158,7 @@ pub enum GameInput {
     MoveRight,
     MoveLeft,
     Attack,
-    
+
     Defend,
 
     Join,

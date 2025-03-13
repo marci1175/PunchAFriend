@@ -51,6 +51,9 @@ pub fn ui_system(
                     ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
                         ui.add(egui::Button::new(RichText::from("Mods").size(25.)).frame(false));
                         ui.add(egui::Button::new(RichText::from("Options").size(25.)).frame(false));
+                        ui.add(
+                            egui::Button::new(RichText::from("Map Creator").size(25.)).frame(false),
+                        );
 
                         if ui
                             .add(
