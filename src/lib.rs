@@ -1,7 +1,6 @@
 pub mod game;
 pub mod networking;
 
-
 use bevy::{ecs::component::Component, math::Vec2};
 
 #[derive(Component, Clone)]

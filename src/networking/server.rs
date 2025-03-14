@@ -22,7 +22,10 @@ use crate::{
     networking::UDP_DATAGRAM_SIZE,
 };
 
-use super::{write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, RemoteServerRequest, ServerMetadata, ServerRequest};
+use super::{
+    write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, RemoteServerRequest,
+    ServerMetadata, ServerRequest,
+};
 
 #[derive(Debug, Clone)]
 pub struct RemoteGameClient {
@@ -154,46 +157,40 @@ fn setup_client_listener(
 ) {
     tokio::spawn(async move {
         loop {
+            // Allocate the buffer for peeking the message's lenght
             let mut buf = vec![0; UDP_DATAGRAM_SIZE];
 
             select! {
+                // Used to stop the server's processes
                 _ = cancellation_token.cancelled() => {
+                    // Break out of the loop if we have been signaled to do so
                     break;
                 },
 
-                Ok((_, address)) = socket.peek_from(&mut buf) => {
-                    if connected_clients.contains_key(&address) {
-                        let incoming_msg_length = u32::from_be_bytes(buf[..4].try_into().unwrap());
-
-                        let mut msg_buf = vec![0; incoming_msg_length as usize + 4];
-
-                        match socket.recv(&mut msg_buf).await {
-                            Ok(recv_size) => {
-                                if recv_size != msg_buf.len() {
-                                    panic!("Incoming message was too large. Exceeding UDP datagram size.");
+                // Peek the message's length
+                read_result = socket.recv_from(&mut buf) => {
+                    // Check the peek's result
+                    match read_result {
+                        Ok((_, address)) => {
+                            // Check if the remote address has already been connected to the main server
+                            if connected_clients.contains_key(&address) {
+                                // Serialize the bytes from the message
+                                if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&buf[4..]) {
+                                    // Send the message to the server's receiver
+                                    client_request_channel.send((client_request, address)).await.unwrap();
                                 }
-                            },
-                            Err(err) => {
-                                // if an error occured remove the clients from the connected addresses
-                                connected_clients.remove(&address);
-
-                                // Print out the error
-                                dbg!(err);
-
-                                // Stop executing the remaining code
-                                continue;
-                            },
+                                else {
+                                    println!("Received a message unsupported.");
+                                }
+                            }
+                            else {
+                                println!("Received a message from an unauthenticated account: {address}.");
+                            }
                         }
-
-                        if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&msg_buf[4..]) {
-                            client_request_channel.send((client_request, address)).await.unwrap();
+                        Err(err) => {
+                            // Print out error
+                            dbg!(err);
                         }
-                        else {
-                            panic!("Received a message unsupported");
-                        }
-                    }
-                    else {
-                        println!("Received a message from an unauthenticated account: {address}");
                     }
                 }
             }

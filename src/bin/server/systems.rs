@@ -1,4 +1,3 @@
-
 use bevy::{
     asset::Assets,
     core_pipeline::core_2d::Camera2d,
@@ -25,7 +24,8 @@ use punchafriend::{
         RandomEngine,
     },
     networking::{server::notify_client_about_player_disconnect, ServerTickUpdate},
-    server::ApplicationCtx, GameInput, MapElement,
+    server::ApplicationCtx,
+    GameInput, MapElement,
 };
 
 pub fn setup_game(
@@ -97,13 +97,11 @@ pub fn tick(
 
                             let connected_clients_clone = connected_clients_clone.clone();
 
+                            let removed_uuid =
+                                connected_clients_clone.remove(&address).unwrap().1 .0;
+
                             runtime.spawn_background_task(move |_ctx| async move {
                                 for mut connected_client in connected_clients_clone.iter_mut() {
-                                    let removed_uuid = connected_clients_clone
-                                        .remove(&address)
-                                        .unwrap()
-                                        .1.0;
-
                                     let (_, tcp_stream) = connected_client.value_mut();
 
                                     notify_client_about_player_disconnect(tcp_stream, removed_uuid)

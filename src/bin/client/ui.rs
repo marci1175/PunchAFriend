@@ -229,7 +229,7 @@ pub fn ui_system(
                     .insert(server_tick_update.player);
             }
         }
-    
+
         if let Ok(remote_request) = client_connection.remote_receiver.try_recv() {
             let uuid = remote_request.id;
 
@@ -245,7 +245,7 @@ pub fn ui_system(
                             break;
                         }
                     }
-                },
+                }
             }
         }
     } else {
@@ -258,7 +258,7 @@ pub fn ui_system(
                         // Despawn all of the existing players, to clear out players left from a different match
                         commands.entity(entity).despawn();
                     }
-                    
+
                     // Set the window to be displaying game
                     app_ctx.ui_mode = UiMode::Game;
 

@@ -57,7 +57,8 @@ impl ClientConnection {
         // Create a new channel pair for managing server main instructions
         let (remote_sender, remote_receiver) = channel::<RemoteServerRequest>(2000);
 
-        setup_server_instruction_listener(tcp_stream, cancellation_token.clone(), remote_sender).await;
+        setup_server_instruction_listener(tcp_stream, cancellation_token.clone(), remote_sender)
+            .await;
 
         // Connect to the destination address
         udp_socket
