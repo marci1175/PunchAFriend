@@ -54,15 +54,11 @@ pub fn tick(
         Mut<KinematicCharacterController>,
         &Transform,
     )>,
-    mut framerate: ResMut<FramepaceSettings>,
     mut rand: ResMut<RandomEngine>,
     runtime: Res<TokioTasksRuntime>,
     collision_groups: Res<CollisionGroupSet>,
     time: Res<Time>,
 ) {
-    // Add tick limiter
-    framerate.limiter = Limiter::from_framerate(120.);
-
     // Increment global tick counter
     let current_tick_count = app_ctx.tick_count.wrapping_add(1);
 
@@ -163,6 +159,11 @@ pub fn reset_jump_remaining_for_player(
     }
 }
 
-pub fn setup_window(mut winit_settings: ResMut<WinitSettings>) {
+pub fn setup_window(
+    mut winit_settings: ResMut<WinitSettings>,
+    mut framerate: ResMut<FramepaceSettings>,
+) {
     winit_settings.unfocused_mode = UpdateMode::Continuous;
+
+    framerate.limiter = Limiter::from_framerate(120.);
 }

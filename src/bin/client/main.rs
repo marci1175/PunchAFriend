@@ -23,6 +23,7 @@ fn main() {
     }));
 
     app.add_plugins(EguiPlugin);
+    app.add_plugins(bevy_framepace::FramepacePlugin);
     app.add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default());
     app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0));
     app.add_plugins(RapierDebugRenderPlugin::default());

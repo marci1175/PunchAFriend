@@ -34,9 +34,9 @@ pub fn ui_system(
 
     match app_ctx.ui_mode {
         // If there is a game currently playing we should display the HUD.
-        punchafriend::UiMode::Game => {}
+        punchafriend::UiLayer::Game => {}
         // Display main menu window.
-        punchafriend::UiMode::MainMenu => {
+        punchafriend::UiLayer::MainMenu => {
             // Display main title.
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
@@ -86,7 +86,7 @@ pub fn ui_system(
                     });
                 });
         }
-        punchafriend::UiMode::PauseWindow => {
+        punchafriend::UiLayer::PauseWindow(_) => {
             // Paint the pause menu's backgound
             egui::Area::new("pause_window_background".into()).show(ctx, |ui| {
                 ui.painter()
@@ -108,7 +108,7 @@ pub fn ui_system(
                     });
                 });
         }
-        punchafriend::UiMode::GameMenu => {}
+        punchafriend::UiLayer::GameMenu => {}
     }
 
     if app_ctx.server_instance.is_some() {

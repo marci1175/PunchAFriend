@@ -16,12 +16,10 @@ use punchafriend::{
 };
 
 fn main() {
-    // console_subscriber::init();
-
     let mut app = App::new();
 
     app.add_plugins(DefaultPlugins.build().add(LogPlugin {
-        filter: "info,wgpu_core=warn,wgpu_hal=off,tokio=trace,runtime=trace".into(),
+        filter: "info,wgpu_core=warn,wgpu_hal=off".into(),
         level: bevy::log::Level::DEBUG,
         ..Default::default()
     }));

@@ -23,13 +23,20 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum UiMode {
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum UiLayer {
     Game,
     #[default]
     MainMenu,
     GameMenu,
-    PauseWindow,
+    PauseWindow((PauseWindowState, Box<UiLayer>)),
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum PauseWindowState {
+    #[default]
+    Main,
+    Settings,
 }
 
 pub mod server {
@@ -44,7 +51,7 @@ pub mod server {
 
     use crate::{
         networking::server::{RemoteGameClient, ServerInstance},
-        UiMode,
+        UiLayer,
     };
 
     #[derive(Default)]
@@ -53,7 +60,7 @@ pub mod server {
     #[derive(Resource)]
     pub struct ApplicationCtx {
         /// The Ui's state in the Application.
-        pub ui_mode: UiMode,
+        pub ui_mode: UiLayer,
 
         pub ui_state: UiState,
 
@@ -75,7 +82,7 @@ pub mod server {
     impl Default for ApplicationCtx {
         fn default() -> Self {
             Self {
-                ui_mode: UiMode::MainMenu,
+                ui_mode: UiLayer::MainMenu,
                 ui_state: UiState::default(),
                 rand: SmallRng::from_rng(&mut rand::rng()),
                 server_instance_receiver: channel(255).1,
@@ -99,7 +106,7 @@ pub mod client {
     use tokio::sync::mpsc::{channel, Receiver};
     use tokio_util::sync::CancellationToken;
 
-    use crate::{networking::client::ClientConnection, UiMode};
+    use crate::{networking::client::ClientConnection, UiLayer};
 
     #[derive(Default)]
     pub struct UiState {
@@ -108,8 +115,8 @@ pub mod client {
 
     #[derive(Resource)]
     pub struct ApplicationCtx {
-        /// The Ui's mode in the Application.
-        pub ui_mode: UiMode,
+        /// The Ui's layers in the Application.
+        pub ui_layer: UiLayer,
 
         /// The Ui's state in the Application,
         pub ui_state: UiState,
@@ -129,6 +136,8 @@ pub mod client {
         pub egui_toasts: Toasts,
 
         pub cancellation_token: CancellationToken,
+
+        pub settings: Settings,
     }
 
     impl Default for ApplicationCtx {
@@ -137,7 +146,7 @@ pub mod client {
                 channel::<anyhow::Result<ClientConnection>>(2000);
 
             Self {
-                ui_mode: UiMode::MainMenu,
+                ui_layer: UiLayer::MainMenu,
                 ui_state: UiState::default(),
                 client_connection: None,
                 rand: SmallRng::from_rng(&mut rand::rng()),
@@ -145,8 +154,14 @@ pub mod client {
                 connection_sender,
                 egui_toasts: Toasts::new(),
                 cancellation_token: CancellationToken::new(),
+                settings: Settings::default(),
             }
         }
+    }
+
+    #[derive(Debug, Default, Clone)]
+    pub struct Settings {
+        pub fps: f64,
     }
 }
 

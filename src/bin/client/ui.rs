@@ -12,11 +12,13 @@ use bevy::{
     sprite::ColorMaterial,
     time::Time,
     transform::components::Transform,
+    winit::{UpdateMode, WinitSettings},
 };
 use bevy_egui::{
-    egui::{self, Align2, Color32, Layout, RichText},
+    egui::{self, Align2, Color32, Layout, Pos2, RichText, Sense, Slider},
     EguiContexts,
 };
+use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, LockedAxes, RigidBody, Velocity,
 };
@@ -27,7 +29,7 @@ use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Player},
     networking::client::ClientConnection,
-    GameInput, MapElement, UiMode,
+    GameInput, MapElement, PauseWindowState, UiLayer,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -47,6 +49,7 @@ pub fn ui_system(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
+    mut framepace: ResMut<FramepaceSettings>,
 ) {
     // Get context
     let ctx = context.ctx_mut();
@@ -54,22 +57,26 @@ pub fn ui_system(
     // Show toasts
     app_ctx.egui_toasts.show(ctx);
 
-    match app_ctx.ui_mode {
-        UiMode::Game => {
+    match app_ctx.ui_layer.clone() {
+        UiLayer::Game => {
             // Send the inputs to the sender thread
             if let Some(client_connection) = &app_ctx.client_connection {
                 let mut game_inputs: Vec<GameInput> = vec![];
 
                 for pressed in keyboard_input.get_pressed() {
                     match pressed {
-                        KeyCode::Space => game_inputs.push(GameInput::Attack),
                         KeyCode::KeyD => game_inputs.push(GameInput::MoveRight),
                         KeyCode::KeyA => game_inputs.push(GameInput::MoveLeft),
-                        KeyCode::KeyW => game_inputs.push(GameInput::MoveJump),
                         KeyCode::KeyS => game_inputs.push(GameInput::MoveDuck),
-                        _ => {
-                            continue;
-                        }
+                        _ => continue,
+                    }
+                }
+
+                for just_pressed in keyboard_input.get_just_pressed() {
+                    match just_pressed {
+                        KeyCode::KeyW => game_inputs.push(GameInput::MoveJump),
+                        KeyCode::Space => game_inputs.push(GameInput::Attack),
+                        _ => continue,
                     }
                 }
 
@@ -94,10 +101,13 @@ pub fn ui_system(
 
             // Check for pause key
             if keyboard_input.just_pressed(KeyCode::Escape) {
-                app_ctx.ui_mode = UiMode::PauseWindow;
+                app_ctx.ui_layer = UiLayer::PauseWindow((
+                    PauseWindowState::Main,
+                    Box::new(app_ctx.ui_layer.clone()),
+                ));
             }
         }
-        UiMode::MainMenu => {
+        UiLayer::MainMenu => {
             // Display main title.
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
@@ -111,7 +121,18 @@ pub fn ui_system(
                 .show(ctx, |ui| {
                     ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
                         ui.add(egui::Button::new(RichText::from("Mods").size(25.)).frame(false));
-                        ui.add(egui::Button::new(RichText::from("Options").size(25.)).frame(false));
+
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::from("Options").size(25.)).frame(false),
+                            )
+                            .clicked()
+                        {
+                            app_ctx.ui_layer = UiLayer::PauseWindow((
+                                PauseWindowState::Settings,
+                                Box::new(app_ctx.ui_layer.clone()),
+                            ));
+                        };
 
                         if ui
                             .add(
@@ -121,18 +142,18 @@ pub fn ui_system(
                             .clicked()
                         {
                             // Set ui state
-                            app_ctx.ui_mode = UiMode::GameMenu;
+                            app_ctx.ui_layer = UiLayer::GameMenu;
                         };
 
                         ui.add_space(50.);
                     });
                 });
         }
-        UiMode::GameMenu => {
+        UiLayer::GameMenu => {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
                     if ui.button("Back").clicked() {
-                        app_ctx.ui_mode = UiMode::MainMenu;
+                        app_ctx.ui_layer = UiLayer::MainMenu;
                     }
 
                     ui.label("Connect to a Game Server:");
@@ -163,35 +184,85 @@ pub fn ui_system(
                 });
             });
         }
-        UiMode::PauseWindow => {
+        UiLayer::PauseWindow((inner_state, state_before)) => {
             // Paint the pause menu's backgound
             egui::Area::new("pause_window_background".into()).show(ctx, |ui| {
                 ui.painter()
                     .rect_filled(ctx.screen_rect(), 0., Color32::from_black_alpha(200));
+
+                // Consume all interactions
+                ui.interact(
+                    ctx.screen_rect(),
+                    "consume_input".into(),
+                    Sense::click_and_drag(),
+                );
             });
 
-            // If the player pauses their game whilst in a game we should display the pause menu.
-            egui::Window::new("pause_window")
-                .title_bar(false)
-                .resizable(false)
-                .collapsible(false)
-                .anchor(Align2::CENTER_CENTER, egui::vec2(0., 0.))
-                .fixed_size(ctx.screen_rect().size() / 3.)
+            let window_state = match inner_state {
+                punchafriend::PauseWindowState::Main => {
+                    // If the player pauses their game whilst in a game we should display the pause menu.
+                    egui::Window::new("pause_window")
+                        .title_bar(false)
+                        .resizable(false)
+                        .collapsible(false)
+                        .anchor(Align2::CENTER_CENTER, egui::vec2(0., 0.))
+                        .fixed_size(ctx.screen_rect().size() / 3.)
+                        .show(ctx, |ui| {
+                            ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
+                                if ui.add(egui::Button::new("Resume").frame(false)).clicked() {
+                                    app_ctx.ui_layer = UiLayer::Game;
+                                }
+
+                                if ui.add(egui::Button::new("Options").frame(false)).clicked() {
+                                    app_ctx.ui_layer = UiLayer::PauseWindow((
+                                        PauseWindowState::Settings,
+                                        Box::new(app_ctx.ui_layer.clone()),
+                                    ));
+                                }
+
+                                if ui
+                                    .add(egui::Button::new("Quit Server").frame(false))
+                                    .clicked()
+                                {
+                                    reset_connection_and_ui(&mut app_ctx);
+                                }
+                            });
+                        })
+                }
+                punchafriend::PauseWindowState::Settings => egui::Window::new("Settings")
+                    .resizable(false)
+                    .collapsible(false)
+                    .anchor(Align2::CENTER_CENTER, egui::vec2(0., 0.))
+                    .fixed_size(ctx.screen_rect().size() / 2.)
+                    .vscroll(true)
+                    .show(ctx, |ui| {
+                        ui.label(RichText::from("Video").size(20.).strong());
+
+                        ui.horizontal(|ui| {
+                            ui.label("Framerate");
+
+                            let fps_slider =
+                                ui.add(Slider::new(&mut app_ctx.settings.fps, 30.0..=600.0));
+
+                            if fps_slider.changed() {
+                                framepace.limiter = Limiter::from_framerate(app_ctx.settings.fps);
+                            }
+                        });
+                    }),
+            };
+
+            let window_pos_rect = window_state.unwrap().response.rect;
+
+            // Create the exit button
+            egui::Area::new("exit_button".into())
+                .fixed_pos(Pos2::new(
+                    window_pos_rect.max.x - 50.,
+                    window_pos_rect.min.y - 20.,
+                ))
                 .show(ctx, |ui| {
-                    ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
-                        if ui.add(egui::Button::new("Resume").frame(false)).clicked() {
-                            app_ctx.ui_mode = UiMode::Game;
-                        }
-
-                        ui.add(egui::Button::new("Options").frame(false)).clicked();
-
-                        if ui
-                            .add(egui::Button::new("Quit Server").frame(false))
-                            .clicked()
-                        {
-                            reset_connection_and_ui(&mut app_ctx);
-                        }
-                    });
+                    if ui.button(RichText::from("Back").strong()).clicked() {
+                        app_ctx.ui_layer = *state_before.clone();
+                    }
                 });
         }
     }
@@ -242,6 +313,7 @@ pub fn ui_system(
                             // Despawn the entity
                             commands.entity(entity).despawn();
 
+                            // Break out from the loop
                             break;
                         }
                     }
@@ -260,7 +332,7 @@ pub fn ui_system(
                     }
 
                     // Set the window to be displaying game
-                    app_ctx.ui_mode = UiMode::Game;
+                    app_ctx.ui_layer = UiLayer::Game;
 
                     // Set the client connection variable
                     app_ctx.client_connection = Some(client_connection);
@@ -290,7 +362,7 @@ fn reset_connection_and_ui(app_ctx: &mut ResMut<'_, ApplicationCtx>) {
 
     app_ctx.client_connection = None;
 
-    app_ctx.ui_mode = UiMode::MainMenu;
+    app_ctx.ui_layer = UiLayer::MainMenu;
 
     app_ctx.cancellation_token = CancellationToken::new();
 }
@@ -300,6 +372,8 @@ pub fn setup_game(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
+    mut winit_settings: ResMut<WinitSettings>,
+    mut framerate: ResMut<FramepaceSettings>,
 ) {
     // Setup graphics
     commands.spawn(Camera2d);
@@ -310,4 +384,8 @@ pub fn setup_game(
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(collision_groups.map_object)
         .insert(MapElement);
+
+    framerate.limiter = Limiter::from_framerate(60.);
+
+    winit_settings.unfocused_mode = UpdateMode::Continuous;
 }
