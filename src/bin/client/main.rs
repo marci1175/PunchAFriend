@@ -1,17 +1,19 @@
 mod ui;
+mod lib; 
+
+use std::time::Duration;
 
 use bevy::{
-    app::{App, PluginGroup, Startup, Update},
-    log::LogPlugin,
-    DefaultPlugins,
+    app::{App, FixedUpdate, PluginGroup, Startup, Update}, log::LogPlugin, time::{common_conditions::on_timer, Timer}, DefaultPlugins
 };
 use bevy_egui::EguiPlugin;
 use bevy_rapier2d::{
     plugin::{NoUserData, RapierPhysicsPlugin},
     render::RapierDebugRenderPlugin,
 };
+use lib::NetworkTimer;
 use punchafriend::{client::ApplicationCtx, game::collision::CollisionGroupSet};
-use ui::{setup_game, ui_system};
+use ui::{handle_server_output, handle_user_input, setup_game, ui_system};
 
 fn main() {
     let mut app = App::new();
@@ -30,9 +32,12 @@ fn main() {
 
     app.insert_resource(ApplicationCtx::default());
     app.insert_resource(CollisionGroupSet::default());
-
-    app.add_systems(Update, ui_system);
+    app.insert_resource(NetworkTimer::new(Timer::new(Duration::from_millis(2), bevy::time::TimerMode::Repeating)));
+    
     app.add_systems(Startup, setup_game);
+    app.add_systems(Update, ui_system);
+    app.add_systems(FixedUpdate, handle_user_input);
+    app.add_systems(Update, handle_server_output);
 
     app.run();
 }

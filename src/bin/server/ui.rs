@@ -11,9 +11,10 @@ use bevy_egui::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
-    game::collision::CollisionGroupSet,
+    game::{self, collision::CollisionGroupSet},
     networking::server::{setup_remote_client_handler, ServerInstance},
     server::ApplicationCtx,
+    UiLayer,
 };
 use tokio::sync::mpsc::channel;
 
@@ -34,7 +35,16 @@ pub fn ui_system(
 
     match app_ctx.ui_mode {
         // If there is a game currently playing we should display the HUD.
-        punchafriend::UiLayer::Game => {}
+        punchafriend::UiLayer::Game => {
+            egui::Area::new("server_info".into())
+                .anchor(Align2::LEFT_TOP, egui::vec2(50., 50.))
+                .default_size(egui::vec2(100., 100.))
+                .show(ctx, |ui| {
+                    if let Some(inst) = &app_ctx.server_instance {
+                        ui.label(format!("Port: {}", inst.tcp_listener_port));
+                    }
+                });
+        }
         // Display main menu window.
         punchafriend::UiLayer::MainMenu => {
             // Display main title.
@@ -76,11 +86,9 @@ pub fn ui_system(
                                 // Send the new instance through the channel
                                 sender.send(connection_result).await.unwrap();
                             });
-                        };
 
-                        if let Some(inst) = &app_ctx.server_instance {
-                            ui.label(format!("{}", inst.tcp_listener_port));
-                        }
+                            app_ctx.ui_mode = UiLayer::Game;
+                        };
 
                         ui.add_space(50.);
                     });
