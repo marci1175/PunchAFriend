@@ -59,7 +59,7 @@ pub fn player_movement(
 
     // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
     // If there are no more jumps remaining the user needs to wait until they touch a MapObject again. This indicates they've landed.
-    if *game_input == GameInput::MoveJump && player.jumps_remaining != 0 {
+    if *game_input == GameInput::MoveJump && dbg!(player.jumps_remaining) != 0 {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., 500.),
             angvel: 0.5,

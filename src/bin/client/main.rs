@@ -36,8 +36,8 @@ fn main() {
     
     app.add_systems(Startup, setup_game);
     app.add_systems(Update, ui_system);
-    app.add_systems(FixedUpdate, handle_user_input);
     app.add_systems(Update, handle_server_output);
+    app.add_systems(FixedUpdate, handle_user_input);
 
     app.run();
 }
