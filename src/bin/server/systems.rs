@@ -86,8 +86,6 @@ pub fn tick(
                             &time,
                         );
 
-                        dbg!(action);
-
                         if matches!(*action, GameInput::Exit) {
                             let mut entity_commands = commands.entity(query_item.0);
 

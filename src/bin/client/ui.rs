@@ -346,7 +346,7 @@ pub fn handle_user_input(
         for just_pressed in keyboard_input.get_just_pressed() {
             match just_pressed {
                 KeyCode::Space => game_inputs.push(GameInput::Attack),
-                KeyCode::KeyW => game_inputs.push(dbg!(GameInput::MoveJump)),
+                KeyCode::KeyW => game_inputs.push(GameInput::MoveJump),
                 _ => continue,
             }
         }
@@ -358,7 +358,7 @@ pub fn handle_user_input(
 
         if let Err(err) = client_connection
             .server_input_sender
-            .try_send(dbg!(game_inputs))
+            .try_send(game_inputs)
         {
             app_ctx.egui_toasts.add(
                 Toast::new()
