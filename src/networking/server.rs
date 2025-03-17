@@ -189,7 +189,7 @@ fn setup_client_listener(
                         }
                         Err(err) => {
                             // Print out error
-                            dbg!(err);
+                            // dbg!(err);
                         }
                     }
                 }

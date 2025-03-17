@@ -33,8 +33,6 @@ use punchafriend::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::lib::NetworkTimer;
-
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
     connect_to_address: String,
@@ -224,9 +222,14 @@ pub fn ui_system(
     }
 }
 
-pub fn handle_server_output(mut app_ctx: ResMut<'_, ApplicationCtx>, mut players: Query<'_, '_, (Entity, &mut Player, &mut Transform)>, mut commands: Commands<'_, '_>, collision_groups: Res<'_, CollisionGroupSet>) {
+pub fn handle_server_output(
+    mut app_ctx: ResMut<'_, ApplicationCtx>,
+    mut players: Query<'_, '_, (Entity, &mut Player, &mut Transform)>,
+    mut commands: Commands<'_, '_>,
+    collision_groups: Res<'_, CollisionGroupSet>,
+) {
     if let Some(client_connection) = &mut app_ctx.client_connection {
-        if let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
+        while let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
             // If the tick we have received is older than the newest one we have we drop it.
             if client_connection.last_tick > server_tick_update.tick_count {
                 return;
@@ -312,59 +315,66 @@ pub fn handle_server_output(mut app_ctx: ResMut<'_, ApplicationCtx>, mut players
     }
 }
 
-pub fn handle_user_input(mut app_ctx: ResMut<'_, ApplicationCtx>, keyboard_input: Res<'_, ButtonInput<KeyCode>>, mut network_timer: ResMut<NetworkTimer>, time: Res<Time>) {
-    let times = network_timer.0.times_finished_this_tick();
-    
-    // Increment the timer
-    network_timer.0.tick(time.delta());
-    
-    for _n in 0..times {
-        // Send the inputs to the sender thread
-        if let Some(client_connection) = &app_ctx.client_connection {
-            let mut game_inputs: Vec<GameInput> = vec![];
+pub fn handle_user_input(
+    mut app_ctx: ResMut<'_, ApplicationCtx>,
+    keyboard_input: Res<'_, ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
+    if app_ctx.ui_layer != UiLayer::Game {
+        return;
+    }
 
-            for pressed in keyboard_input.get_pressed() {
-                match pressed {
-                    KeyCode::KeyD => game_inputs.push(GameInput::MoveRight),
-                    KeyCode::KeyA => game_inputs.push(GameInput::MoveLeft),
-                    KeyCode::KeyS => game_inputs.push(GameInput::MoveDuck),
-                    _ => continue,
-                }
-            }
+    // Check for pause key
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        app_ctx.ui_layer =
+            UiLayer::PauseWindow((PauseWindowState::Main, Box::new(app_ctx.ui_layer.clone())));
+    }
 
-            for just_pressed in keyboard_input.get_just_pressed() {
-                match just_pressed {
-                    KeyCode::KeyW => game_inputs.push(GameInput::MoveJump),
-                    KeyCode::Space => game_inputs.push(GameInput::Attack),
-                    _ => continue,
-                }
-            }
+    // Send the inputs to the sender thread
+    if let Some(client_connection) = &app_ctx.client_connection {
+        let mut game_inputs: Vec<GameInput> = vec![];
 
-            if let Err(err) = client_connection.server_input_sender.try_send(game_inputs) {
-                app_ctx.egui_toasts.add(
-                    Toast::new()
-                        .kind(egui_toast::ToastKind::Error)
-                        .text(format!(
-                            "Sending to endpoint handler thread failed: {}",
-                            err
-                        ))
-                        .options(
-                            ToastOptions::default()
-                                .duration(Some(Duration::from_secs(3)))
-                                .show_progress(true),
-                        ),
-                );
-
-                reset_connection_and_ui(&mut app_ctx);
+        for pressed in keyboard_input.get_pressed() {
+            match pressed {
+                KeyCode::KeyD => game_inputs.push(GameInput::MoveRight),
+                KeyCode::KeyA => game_inputs.push(GameInput::MoveLeft),
+                KeyCode::KeyS => game_inputs.push(GameInput::MoveDuck),
+                _ => continue,
             }
         }
 
-        // Check for pause key
-        if keyboard_input.just_pressed(KeyCode::Escape) {
-            app_ctx.ui_layer = UiLayer::PauseWindow((
-                PauseWindowState::Main,
-                Box::new(app_ctx.ui_layer.clone()),
-            ));
+        for just_pressed in keyboard_input.get_just_pressed() {
+            match just_pressed {
+                KeyCode::Space => game_inputs.push(GameInput::Attack),
+                KeyCode::KeyW => game_inputs.push(dbg!(GameInput::MoveJump)),
+                _ => continue,
+            }
+        }
+
+        // If we havent inputted anything dont send the server an empty packet
+        if game_inputs.is_empty() {
+            return;
+        }
+
+        if let Err(err) = client_connection
+            .server_input_sender
+            .try_send(dbg!(game_inputs))
+        {
+            app_ctx.egui_toasts.add(
+                Toast::new()
+                    .kind(egui_toast::ToastKind::Error)
+                    .text(format!(
+                        "Sending to endpoint handler thread failed: {}",
+                        err
+                    ))
+                    .options(
+                        ToastOptions::default()
+                            .duration(Some(Duration::from_secs(3)))
+                            .show_progress(true),
+                    ),
+            );
+
+            reset_connection_and_ui(&mut app_ctx);
         }
     }
 }
