@@ -15,7 +15,7 @@ use bevy::{
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
-use bevy_rapier2d::prelude::{ActiveEvents, Collider, KinematicCharacterController};
+use bevy_rapier2d::prelude::{ActiveEvents, Collider, KinematicCharacterController, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     game::{
@@ -53,6 +53,7 @@ pub fn tick(
         Mut<Player>,
         Mut<KinematicCharacterController>,
         &Transform,
+        &Velocity,
     )>,
     mut rand: ResMut<RandomEngine>,
     runtime: Res<TokioTasksRuntime>,
@@ -72,7 +73,7 @@ pub fn tick(
             while let Ok((client_req, address)) = remote_receiver.try_recv() {
                 'query_loop: for mut query_item in players_query.iter_mut() {
                     // If the current player we are iterating on doesn't match the id provided by the client request countinue the iteration.
-                    if query_item.1.id != query_item.1.id {
+                    if query_item.1.id != client_req.id {
                         continue;
                     }
 
@@ -87,6 +88,8 @@ pub fn tick(
                         );
 
                         if matches!(*action, GameInput::Exit) {
+                            println!("Exited");
+
                             let mut entity_commands = commands.entity(query_item.0);
 
                             entity_commands.despawn();
@@ -113,9 +116,9 @@ pub fn tick(
             }
         }
 
-        for (_entity, player, _, transform) in players_query.iter() {
+        for (_entity, player, _, position, velocity) in players_query.iter() {
             let server_tick_update =
-                ServerTickUpdate::new(*transform, player.clone(), current_tick_count);
+                ServerTickUpdate::new(*position, *velocity, player.clone(), current_tick_count);
 
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
 

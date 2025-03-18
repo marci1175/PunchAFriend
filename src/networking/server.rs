@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use bevy::{ecs::system::ResMut, transform::components::Transform};
 use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
-    LockedAxes, RigidBody,
+    LockedAxes, RigidBody, Velocity,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use dashmap::DashMap;
@@ -101,7 +101,7 @@ pub fn setup_remote_client_handler(
     server_instance.server_receiver = Some(receiver);
 
     // Spawn the incoming connection accepter thread
-    tokio_runtime.spawn_background_task(move |mut ctx| async move {        
+    tokio_runtime.spawn_background_task(move |mut ctx| async move {
         setup_client_listener(udp_socket.clone(), cancellation_token_clone.clone(), sender.clone(), connected_clients_clone.clone());
         
         loop {
@@ -132,6 +132,7 @@ pub fn setup_remote_client_handler(
                             .insert(ActiveEvents::COLLISION_EVENTS)
                             .insert(collision_groups.player)
                             .insert(Ccd::enabled())
+                            .insert(Velocity::default())
                             .insert(Player::new_from_id(uuid)); 
                         }).await;
                     }
@@ -189,7 +190,7 @@ fn setup_client_listener(
                         }
                         Err(err) => {
                             // Print out error
-                            // dbg!(err);
+                            dbg!(err);
                         }
                     }
                 }

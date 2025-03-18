@@ -1,4 +1,5 @@
 use bevy::transform::components::Transform;
+use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -24,17 +25,25 @@ pub enum ServerRequest {
     PlayerDisconnect,
 }
 
+/// This server as a way for the server to send the state of an entity in the world.
+/// This packet contains every necessary information about a player for the client to simulate it.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ServerTickUpdate {
-    pub transform: Transform,
+    /// The position of the Entity in the tick.
+    pub position: Transform,
+    /// The velocity of the Entity, this is used so that the client can extrapolate the player's position via its physics engine. Please note that this is really inaccurate and extrapolation should be implemented.
+    pub velocity: Velocity,
+    /// Important information about the entitiy's [`Player`] instance.
     pub player: Player,
+    /// The nth
     pub tick_count: u64,
 }
 
 impl ServerTickUpdate {
-    pub fn new(transform: Transform, player: Player, tick_count: u64) -> Self {
+    pub fn new(position: Transform, velocity: Velocity, player: Player, tick_count: u64) -> Self {
         Self {
-            transform,
+            position,
+            velocity,
             player,
             tick_count,
         }

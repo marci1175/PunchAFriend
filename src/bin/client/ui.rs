@@ -33,6 +33,8 @@ use punchafriend::{
 };
 use tokio_util::sync::CancellationToken;
 
+use crate::lib::UniqueLastTickCount;
+
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
     connect_to_address: String,
@@ -224,7 +226,7 @@ pub fn ui_system(
 
 pub fn handle_server_output(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
-    mut players: Query<'_, '_, (Entity, &mut Player, &mut Transform)>,
+    mut players: Query<'_, '_, (Entity, &mut Player, &mut Transform, &mut Velocity, &mut UniqueLastTickCount)>,
     mut commands: Commands<'_, '_>,
     collision_groups: Res<'_, CollisionGroupSet>,
 ) {
@@ -235,29 +237,33 @@ pub fn handle_server_output(
                 return;
             }
 
-            // Set the new tick count as the latest tick
-            client_connection.last_tick = server_tick_update.tick_count;
+            println!("asdf");
 
-            if !players.iter_mut().any(|(_e, mut player, mut transfrom)| {
-                let player_found = player.id == server_tick_update.player.id;
+            if !players.iter_mut().any(|(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count)| {
+                let player_updatable = player.id == server_tick_update.player.id && unique_tick_count.get_inner() <= server_tick_update.tick_count;
 
-                if player_found {
+                if player_updatable {
                     *player = server_tick_update.player.clone();
-                    *transfrom = server_tick_update.transform;
+                    *transfrom = server_tick_update.position;
+                    *velocity = server_tick_update.velocity;
+
+                    // Set the new tick count as the latest tick for this entity
+                    unique_tick_count.with_tick(server_tick_update.tick_count);
                 }
 
-                player_found
+                player_updatable
             }) {
                 commands
                     .spawn(RigidBody::Dynamic)
                     .insert(Collider::ball(20.0))
-                    .insert(server_tick_update.transform)
+                    .insert(server_tick_update.position)
                     .insert(AdditionalMassProperties::Mass(0.1))
                     .insert(ActiveEvents::COLLISION_EVENTS)
                     .insert(LockedAxes::ROTATION_LOCKED)
                     .insert(collision_groups.player)
                     .insert(Ccd::enabled())
                     .insert(Velocity::default())
+                    .insert(UniqueLastTickCount::new(0))
                     .insert(server_tick_update.player);
             }
         }
@@ -268,7 +274,7 @@ pub fn handle_server_output(
             match remote_request.request {
                 punchafriend::networking::ServerRequest::PlayerDisconnect => {
                     // Find the Entity with the designated uuid
-                    for (entity, player, _) in players.iter() {
+                    for (entity, player, _, _, _) in players.iter() {
                         // Check for the correct uuid
                         if player.id == uuid {
                             // Despawn the entity
@@ -287,7 +293,7 @@ pub fn handle_server_output(
             match connection {
                 Ok(client_connection) => {
                     // Iterate over all of the players
-                    for (entity, _, _) in players.iter() {
+                    for (entity, _, _, _, _) in players.iter() {
                         // Despawn all of the existing players, to clear out players left from a different match
                         commands.entity(entity).despawn();
                     }

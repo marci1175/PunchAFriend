@@ -123,6 +123,7 @@ pub fn handle_game_input(
         Mut<Player>,
         Mut<KinematicCharacterController>,
         &Transform,
+        &Velocity
     ),
     commands: &mut Commands,
     game_input: GameInput,
@@ -131,7 +132,7 @@ pub fn handle_game_input(
     time: &Time,
 ) {
     // Unpack the tuple created by the tuple
-    let (entity, ref mut player, controller, transform) = query;
+    let (entity, ref mut player, controller, transform, _) = query;
 
     if !player.has_effect(EffectType::Stunned) {
         // Handle the movement of the LocalPlayer
