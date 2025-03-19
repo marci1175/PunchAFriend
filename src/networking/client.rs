@@ -134,7 +134,7 @@ pub async fn setup_server_game_listener(
                 Ok(_) = socket.peek(&mut buf) => {
                     let message_length = u32::from_be_bytes(buf[..4].try_into().unwrap());
 
-                    let mut msg_buf = vec![0; dbg!(message_length) as usize + 4];
+                    let mut msg_buf = vec![0; message_length as usize + 4];
 
                     socket.recv(&mut msg_buf).await.unwrap();
 

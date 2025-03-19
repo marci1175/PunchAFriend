@@ -237,8 +237,6 @@ pub fn handle_server_output(
                 return;
             }
 
-            println!("asdf");
-
             if !players.iter_mut().any(|(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count)| {
                 let player_updatable = player.id == server_tick_update.player.id && unique_tick_count.get_inner() <= server_tick_update.tick_count;
 
@@ -265,6 +263,8 @@ pub fn handle_server_output(
                     .insert(Velocity::default())
                     .insert(UniqueLastTickCount::new(0))
                     .insert(server_tick_update.player);
+
+                break;
             }
         }
 
@@ -324,7 +324,6 @@ pub fn handle_server_output(
 pub fn handle_user_input(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     keyboard_input: Res<'_, ButtonInput<KeyCode>>,
-    time: Res<Time>,
 ) {
     if app_ctx.ui_layer != UiLayer::Game {
         return;
