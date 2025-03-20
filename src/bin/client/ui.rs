@@ -1,18 +1,10 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use bevy::{
-    asset::Assets,
-    core_pipeline::core_2d::Camera2d,
-    ecs::{
+    asset::{AssetServer, Assets}, core_pipeline::core_2d::Camera2d, ecs::{
         entity::Entity,
         system::{Commands, Query, Res, ResMut},
-    },
-    input::{keyboard::KeyCode, ButtonInput},
-    render::mesh::Mesh,
-    sprite::ColorMaterial,
-    time::Time,
-    transform::components::Transform,
-    winit::{UpdateMode, WinitSettings},
+    }, image::Image, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::{ColorMaterial, TextureAtlasLayout}, time::Time, transform::components::Transform, winit::{UpdateMode, WinitSettings}
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, Pos2, RichText, Sense, Slider},
@@ -44,12 +36,12 @@ pub fn ui_system(
     mut context: EguiContexts,
     mut app_ctx: ResMut<ApplicationCtx>,
     runtime: ResMut<TokioTasksRuntime>,
-    mut players: Query<(Entity, &mut Player, &mut Transform)>,
+    players: Query<(Entity, &mut Player, &mut Transform)>,
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
+    commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<ColorMaterial>>,
+    materials: ResMut<Assets<TextureAtlasLayout>>,
     collision_groups: Res<CollisionGroupSet>,
     mut framepace: ResMut<FramepaceSettings>,
 ) {
@@ -226,7 +218,17 @@ pub fn ui_system(
 
 pub fn handle_server_output(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
-    mut players: Query<'_, '_, (Entity, &mut Player, &mut Transform, &mut Velocity, &mut UniqueLastTickCount)>,
+    mut players: Query<
+        '_,
+        '_,
+        (
+            Entity,
+            &mut Player,
+            &mut Transform,
+            &mut Velocity,
+            &mut UniqueLastTickCount,
+        ),
+    >,
     mut commands: Commands<'_, '_>,
     collision_groups: Res<'_, CollisionGroupSet>,
 ) {
@@ -237,20 +239,23 @@ pub fn handle_server_output(
                 return;
             }
 
-            if !players.iter_mut().any(|(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count)| {
-                let player_updatable = player.id == server_tick_update.player.id && unique_tick_count.get_inner() <= server_tick_update.tick_count;
+            if !players.iter_mut().any(
+                |(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count)| {
+                    let player_updatable = player.id == server_tick_update.player.id
+                        && unique_tick_count.get_inner() <= server_tick_update.tick_count;
 
-                if player_updatable {
-                    *player = server_tick_update.player.clone();
-                    *transfrom = server_tick_update.position;
-                    *velocity = server_tick_update.velocity;
+                    if player_updatable {
+                        *player = server_tick_update.player.clone();
+                        *transfrom = server_tick_update.position;
+                        *velocity = server_tick_update.velocity;
 
-                    // Set the new tick count as the latest tick for this entity
-                    unique_tick_count.with_tick(server_tick_update.tick_count);
-                }
+                        // Set the new tick count as the latest tick for this entity
+                        unique_tick_count.with_tick(server_tick_update.tick_count);
+                    }
 
-                player_updatable
-            }) {
+                    player_updatable
+                },
+            ) {
                 commands
                     .spawn(RigidBody::Dynamic)
                     .insert(Collider::ball(20.0))
@@ -361,10 +366,7 @@ pub fn handle_user_input(
             return;
         }
 
-        if let Err(err) = client_connection
-            .server_input_sender
-            .try_send(game_inputs)
-        {
+        if let Err(err) = client_connection.server_input_sender.try_send(game_inputs) {
             app_ctx.egui_toasts.add(
                 Toast::new()
                     .kind(egui_toast::ToastKind::Error)
@@ -415,4 +417,18 @@ pub fn setup_game(
     framerate.limiter = Limiter::from_framerate(60.);
 
     winit_settings.unfocused_mode = UpdateMode::Continuous;
+}
+
+fn setup_textures(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut path: PathBuf,
+    mut app_ctx: ResMut<ApplicationCtx>,
+) {
+    let texture: bevy::asset::Handle<Image> = asset_server.load(path);
+    let layout = TextureAtlasLayout::from_grid(UVec2::splat(24), 7, 1, None, None);
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+
+    
 }

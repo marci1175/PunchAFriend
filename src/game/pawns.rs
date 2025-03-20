@@ -123,7 +123,7 @@ pub fn handle_game_input(
         Mut<Player>,
         Mut<KinematicCharacterController>,
         &Transform,
-        &Velocity
+        &Velocity,
     ),
     commands: &mut Commands,
     game_input: GameInput,

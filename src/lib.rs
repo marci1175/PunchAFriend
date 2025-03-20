@@ -23,7 +23,7 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UiLayer {
     Game,
     #[default]
@@ -32,7 +32,7 @@ pub enum UiLayer {
     PauseWindow((PauseWindowState, Box<UiLayer>)),
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PauseWindowState {
     #[default]
     Main,
@@ -98,7 +98,7 @@ pub mod server {
 pub mod client {
     use tokio::sync::mpsc::Sender;
 
-    use bevy::ecs::system::Resource;
+    use bevy::{asset::Handle, ecs::system::Resource, image::Image};
 
     use egui_toast::Toasts;
 
@@ -108,12 +108,13 @@ pub mod client {
 
     use crate::{networking::client::ClientConnection, UiLayer};
 
-    #[derive(Default)]
+    #[derive(Default, serde::Serialize, serde::Deserialize)]
     pub struct UiState {
         pub connect_to_address: String,
     }
 
-    #[derive(Resource)]
+    #[derive(Resource, serde::Serialize, serde::Deserialize)]
+    #[serde(default)]
     pub struct ApplicationCtx {
         /// The Ui's layers in the Application.
         pub ui_layer: UiLayer,
@@ -123,21 +124,30 @@ pub mod client {
 
         /// Startup initalized [`SmallRng`] random generator.
         /// Please note, that the [`SmallRng`] is insecure and should not be used in crypto contexts.
+        #[serde(skip)]
         pub rand: rand::rngs::SmallRng,
 
         /// The Client's currently ongoing connection to a remote address.
+        #[serde(skip)]
         pub client_connection: Option<ClientConnection>,
 
         /// Receives the connecting threads connection result.
+        #[serde(skip)]
         pub connection_receiver: Receiver<anyhow::Result<ClientConnection>>,
+        #[serde(skip)]
         pub connection_sender: Sender<anyhow::Result<ClientConnection>>,
 
         /// Used to display notifications with egui
+        #[serde(skip)]
         pub egui_toasts: Toasts,
 
+        #[serde(skip)]
         pub cancellation_token: CancellationToken,
 
         pub settings: Settings,
+
+        #[serde(skip)]
+        pub loaded_texture: Handle<Image>,
     }
 
     impl Default for ApplicationCtx {
@@ -155,13 +165,18 @@ pub mod client {
                 egui_toasts: Toasts::new(),
                 cancellation_token: CancellationToken::new(),
                 settings: Settings::default(),
+                loaded_texture: startup_texture(),
             }
         }
     }
 
-    #[derive(Debug, Default, Clone)]
+    #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
     pub struct Settings {
         pub fps: f64,
+    }
+
+    pub fn startup_texture() -> Handle<Image> {
+        todo!()
     }
 }
 

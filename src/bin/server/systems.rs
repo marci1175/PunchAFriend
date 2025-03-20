@@ -165,7 +165,7 @@ pub fn reset_jump_remaining_for_player(
 pub fn setup_window(
     mut winit_settings: ResMut<WinitSettings>,
     mut framerate: ResMut<FramepaceSettings>,
-    mut commands: Commands,
+    commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
