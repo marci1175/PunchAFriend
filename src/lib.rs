@@ -96,6 +96,8 @@ pub mod server {
 }
 
 pub mod client {
+    use std::path::PathBuf;
+
     use tokio::sync::mpsc::Sender;
 
     use bevy::{asset::Handle, ecs::system::Resource, image::Image};
@@ -111,12 +113,15 @@ pub mod client {
     #[derive(Default, serde::Serialize, serde::Deserialize)]
     pub struct UiState {
         pub connect_to_address: String,
+
+        pub current_resource_pack: Option<PathBuf>,
     }
 
     #[derive(Resource, serde::Serialize, serde::Deserialize)]
     #[serde(default)]
     pub struct ApplicationCtx {
         /// The Ui's layers in the Application.
+        #[serde(skip)]
         pub ui_layer: UiLayer,
 
         /// The Ui's state in the Application,
@@ -147,7 +152,7 @@ pub mod client {
         pub settings: Settings,
 
         #[serde(skip)]
-        pub loaded_texture: Handle<Image>,
+        pub loaded_texture: Option<Handle<Image>>,
     }
 
     impl Default for ApplicationCtx {
@@ -165,7 +170,7 @@ pub mod client {
                 egui_toasts: Toasts::new(),
                 cancellation_token: CancellationToken::new(),
                 settings: Settings::default(),
-                loaded_texture: startup_texture(),
+                loaded_texture: None,
             }
         }
     }
@@ -173,10 +178,6 @@ pub mod client {
     #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
     pub struct Settings {
         pub fps: f64,
-    }
-
-    pub fn startup_texture() -> Handle<Image> {
-        todo!()
     }
 }
 

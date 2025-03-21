@@ -1,5 +1,6 @@
-mod lib;
+mod app;
 mod ui;
+mod systems;
 
 
 use bevy::{
@@ -11,7 +12,8 @@ use bevy_rapier2d::{
     render::RapierDebugRenderPlugin,
 };
 use punchafriend::{client::ApplicationCtx, game::collision::CollisionGroupSet};
-use ui::{handle_server_output, handle_user_input, setup_game, ui_system};
+use systems::{exit_handler, handle_server_output, handle_user_input, setup_game};
+use ui::ui_system;
 
 fn main() {
     let mut app = App::new();
@@ -35,6 +37,7 @@ fn main() {
     app.add_systems(Update, ui_system);
     app.add_systems(FixedUpdate, handle_server_output);
     app.add_systems(Update, handle_user_input);
+    app.add_systems(Update, exit_handler);
 
     app.run();
 }

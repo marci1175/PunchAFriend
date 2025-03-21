@@ -1,36 +1,23 @@
-use std::{path::PathBuf, time::Duration};
 
 use bevy::{
-    asset::{AssetServer, Assets}, core_pipeline::core_2d::Camera2d, ecs::{
-        entity::Entity,
-        system::{Commands, Query, Res, ResMut},
-    }, image::Image, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::{ColorMaterial, TextureAtlasLayout}, time::Time, transform::components::Transform, winit::{UpdateMode, WinitSettings}
+    asset::Assets, ecs::{
+        entity::Entity, system::{Commands, Query, Res, ResMut}
+    }, input::{keyboard::KeyCode, ButtonInput}, render::mesh::Mesh, sprite::TextureAtlasLayout, time::Time, transform::components::Transform
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, Pos2, RichText, Sense, Slider},
     EguiContexts,
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
-use bevy_rapier2d::prelude::{
-    ActiveEvents, AdditionalMassProperties, Ccd, Collider, LockedAxes, RigidBody, Velocity,
-};
 use bevy_tokio_tasks::TokioTasksRuntime;
-use egui_toast::{Toast, ToastOptions};
 
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Player},
-    networking::client::ClientConnection,
-    GameInput, MapElement, PauseWindowState, UiLayer,
+    networking::client::ClientConnection, PauseWindowState, UiLayer,
 };
-use tokio_util::sync::CancellationToken;
 
-use crate::lib::UniqueLastTickCount;
-
-#[derive(Debug, Clone, Default)]
-pub struct UiState {
-    connect_to_address: String,
-}
+use crate::systems::reset_connection_and_ui;
 
 pub fn ui_system(
     mut context: EguiContexts,
@@ -214,221 +201,4 @@ pub fn ui_system(
                 });
         }
     }
-}
-
-pub fn handle_server_output(
-    mut app_ctx: ResMut<'_, ApplicationCtx>,
-    mut players: Query<
-        '_,
-        '_,
-        (
-            Entity,
-            &mut Player,
-            &mut Transform,
-            &mut Velocity,
-            &mut UniqueLastTickCount,
-        ),
-    >,
-    mut commands: Commands<'_, '_>,
-    collision_groups: Res<'_, CollisionGroupSet>,
-) {
-    if let Some(client_connection) = &mut app_ctx.client_connection {
-        while let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
-            // If the tick we have received is older than the newest one we have we drop it.
-            if client_connection.last_tick > server_tick_update.tick_count {
-                return;
-            }
-
-            if !players.iter_mut().any(
-                |(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count)| {
-                    let player_updatable = player.id == server_tick_update.player.id
-                        && unique_tick_count.get_inner() <= server_tick_update.tick_count;
-
-                    if player_updatable {
-                        *player = server_tick_update.player.clone();
-                        *transfrom = server_tick_update.position;
-                        *velocity = server_tick_update.velocity;
-
-                        // Set the new tick count as the latest tick for this entity
-                        unique_tick_count.with_tick(server_tick_update.tick_count);
-                    }
-
-                    player_updatable
-                },
-            ) {
-                commands
-                    .spawn(RigidBody::Dynamic)
-                    .insert(Collider::ball(20.0))
-                    .insert(server_tick_update.position)
-                    .insert(AdditionalMassProperties::Mass(0.1))
-                    .insert(ActiveEvents::COLLISION_EVENTS)
-                    .insert(LockedAxes::ROTATION_LOCKED)
-                    .insert(collision_groups.player)
-                    .insert(Ccd::enabled())
-                    .insert(Velocity::default())
-                    .insert(UniqueLastTickCount::new(0))
-                    .insert(server_tick_update.player);
-
-                break;
-            }
-        }
-
-        if let Ok(remote_request) = client_connection.remote_receiver.try_recv() {
-            let uuid = remote_request.id;
-
-            match remote_request.request {
-                punchafriend::networking::ServerRequest::PlayerDisconnect => {
-                    // Find the Entity with the designated uuid
-                    for (entity, player, _, _, _) in players.iter() {
-                        // Check for the correct uuid
-                        if player.id == uuid {
-                            // Despawn the entity
-                            commands.entity(entity).despawn();
-
-                            // Break out from the loop
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        // Try receiving the incoming successful connection to the remote address.
-        if let Ok(connection) = app_ctx.connection_receiver.try_recv() {
-            match connection {
-                Ok(client_connection) => {
-                    // Iterate over all of the players
-                    for (entity, _, _, _, _) in players.iter() {
-                        // Despawn all of the existing players, to clear out players left from a different match
-                        commands.entity(entity).despawn();
-                    }
-
-                    // Set the window to be displaying game
-                    app_ctx.ui_layer = UiLayer::Game;
-
-                    // Set the client connection variable
-                    app_ctx.client_connection = Some(client_connection);
-                }
-                Err(error) => {
-                    app_ctx.egui_toasts.add(
-                        Toast::new()
-                            .kind(egui_toast::ToastKind::Error)
-                            .text(format!("Connection Failed: {}", error))
-                            .options(
-                                ToastOptions::default()
-                                    .duration(Some(Duration::from_secs(3)))
-                                    .show_progress(true),
-                            ),
-                    );
-                }
-            }
-        }
-    }
-}
-
-pub fn handle_user_input(
-    mut app_ctx: ResMut<'_, ApplicationCtx>,
-    keyboard_input: Res<'_, ButtonInput<KeyCode>>,
-) {
-    if app_ctx.ui_layer != UiLayer::Game {
-        return;
-    }
-
-    // Check for pause key
-    if keyboard_input.just_pressed(KeyCode::Escape) {
-        app_ctx.ui_layer =
-            UiLayer::PauseWindow((PauseWindowState::Main, Box::new(app_ctx.ui_layer.clone())));
-    }
-
-    // Send the inputs to the sender thread
-    if let Some(client_connection) = &app_ctx.client_connection {
-        let mut game_inputs: Vec<GameInput> = vec![];
-
-        for pressed in keyboard_input.get_pressed() {
-            match pressed {
-                KeyCode::KeyD => game_inputs.push(GameInput::MoveRight),
-                KeyCode::KeyA => game_inputs.push(GameInput::MoveLeft),
-                KeyCode::KeyS => game_inputs.push(GameInput::MoveDuck),
-                _ => continue,
-            }
-        }
-
-        for just_pressed in keyboard_input.get_just_pressed() {
-            match just_pressed {
-                KeyCode::Space => game_inputs.push(GameInput::Attack),
-                KeyCode::KeyW => game_inputs.push(GameInput::MoveJump),
-                _ => continue,
-            }
-        }
-
-        // If we havent inputted anything dont send the server an empty packet
-        if game_inputs.is_empty() {
-            return;
-        }
-
-        if let Err(err) = client_connection.server_input_sender.try_send(game_inputs) {
-            app_ctx.egui_toasts.add(
-                Toast::new()
-                    .kind(egui_toast::ToastKind::Error)
-                    .text(format!(
-                        "Sending to endpoint handler thread failed: {}",
-                        err
-                    ))
-                    .options(
-                        ToastOptions::default()
-                            .duration(Some(Duration::from_secs(3)))
-                            .show_progress(true),
-                    ),
-            );
-
-            reset_connection_and_ui(&mut app_ctx);
-        }
-    }
-}
-
-fn reset_connection_and_ui(app_ctx: &mut ResMut<'_, ApplicationCtx>) {
-    app_ctx.cancellation_token.cancel();
-
-    app_ctx.client_connection = None;
-
-    app_ctx.ui_layer = UiLayer::MainMenu;
-
-    app_ctx.cancellation_token = CancellationToken::new();
-}
-
-pub fn setup_game(
-    mut commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<ColorMaterial>>,
-    collision_groups: Res<CollisionGroupSet>,
-    mut winit_settings: ResMut<WinitSettings>,
-    mut framerate: ResMut<FramepaceSettings>,
-) {
-    // Setup graphics
-    commands.spawn(Camera2d);
-
-    commands
-        .spawn(Collider::cuboid(500.0, 10.0))
-        .insert(Transform::from_xyz(0.0, -200.0, 0.0))
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(collision_groups.map_object)
-        .insert(MapElement);
-
-    framerate.limiter = Limiter::from_framerate(60.);
-
-    winit_settings.unfocused_mode = UpdateMode::Continuous;
-}
-
-fn setup_textures(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-    mut path: PathBuf,
-    mut app_ctx: ResMut<ApplicationCtx>,
-) {
-    let texture: bevy::asset::Handle<Image> = asset_server.load(path);
-    let layout = TextureAtlasLayout::from_grid(UVec2::splat(24), 7, 1, None, None);
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
-
-    
 }

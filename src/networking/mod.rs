@@ -35,7 +35,7 @@ pub struct ServerTickUpdate {
     pub velocity: Velocity,
     /// Important information about the entitiy's [`Player`] instance.
     pub player: Player,
-    /// The nth
+    /// The nth tick this packet was sent from.
     pub tick_count: u64,
 }
 

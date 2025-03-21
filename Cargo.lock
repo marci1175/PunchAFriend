@@ -4537,6 +4537,7 @@ dependencies = [
  "dashmap",
  "egui-toast",
  "log",
+ "miniz_oxide",
  "mlua",
  "parking_lot",
  "rand 0.9.0",
