@@ -1,4 +1,4 @@
-use crate::{game::collision::CollisionGroupSet, Direction, GameInput};
+use crate::{game::collision::CollisionGroupSet, networking::GameInput, Direction};
 use bevy::{
     ecs::{component::Component, entity::Entity, system::Commands, world::Mut},
     math::vec2,

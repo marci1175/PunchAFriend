@@ -95,12 +95,13 @@ pub mod server {
     }
 }
 
-pub mod client {
-    use std::path::PathBuf;
+pub mod client {   
+    use std::{path::PathBuf, sync::Arc};
 
+    use parking_lot::RwLock;
     use tokio::sync::mpsc::Sender;
 
-    use bevy::{asset::Handle, ecs::system::Resource, image::Image};
+    use bevy::{asset::{Handle, RenderAssetUsages, StrongHandle}, ecs::system::Resource, image::Image, math::UVec2, sprite::TextureAtlasLayout};
 
     use egui_toast::Toasts;
 
@@ -152,7 +153,7 @@ pub mod client {
         pub settings: Settings,
 
         #[serde(skip)]
-        pub loaded_texture: Option<Handle<Image>>,
+        pub texture_atlas_layout_handle: Handle<TextureAtlasLayout>,
     }
 
     impl Default for ApplicationCtx {
@@ -170,7 +171,7 @@ pub mod client {
                 egui_toasts: Toasts::new(),
                 cancellation_token: CancellationToken::new(),
                 settings: Settings::default(),
-                loaded_texture: None,
+                texture_atlas_layout_handle: Handle::<TextureAtlasLayout>::default(),
             }
         }
     }
@@ -179,18 +180,4 @@ pub mod client {
     pub struct Settings {
         pub fps: f64,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub enum GameInput {
-    MoveJump,
-    MoveDuck,
-    MoveRight,
-    MoveLeft,
-    Attack,
-
-    Defend,
-
-    Join,
-    Exit,
 }

@@ -1,9 +1,11 @@
 use std::{fs, path::PathBuf, time::Duration};
 
 use bevy::{
-    app::AppExit, asset::{AssetServer, Assets}, core_pipeline::core_2d::Camera2d, ecs::{
-        entity::Entity, event::EventReader, system::{Commands, Query, Res, ResMut}
-    }, image::Image, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout}, transform::components::Transform, winit::{UpdateMode, WinitSettings}
+    app::AppExit, asset::{AssetServer, Assets, Handle}, core_pipeline::core_2d::Camera2d, ecs::{
+        entity::Entity,
+        event::EventReader,
+        system::{Commands, Query, Res, ResMut},
+    }, image::Image, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout}, time::{Time, Timer}, transform::components::Transform, winit::{UpdateMode, WinitSettings}
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{
@@ -15,11 +17,12 @@ use miniz_oxide::deflate::CompressionLevel;
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Player},
-    GameInput, MapElement, PauseWindowState, UiLayer,
+    MapElement, PauseWindowState, UiLayer,
+    networking::GameInput,
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::app::lib::UniqueLastTickCount;
+use crate::app::lib::{AnimationState, UniqueLastTickCount};
 
 pub fn handle_server_output(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
@@ -32,11 +35,17 @@ pub fn handle_server_output(
             &mut Transform,
             &mut Velocity,
             &mut UniqueLastTickCount,
+            &mut Sprite,
+            &mut AnimationState
         ),
     >,
     mut commands: Commands<'_, '_>,
     collision_groups: Res<'_, CollisionGroupSet>,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
 ) {
+    let layout = app_ctx.texture_atlas_layout_handle.clone();
+
     if let Some(client_connection) = &mut app_ctx.client_connection {
         while let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
             // If the tick we have received is older than the newest one we have we drop it.
@@ -45,11 +54,18 @@ pub fn handle_server_output(
             }
 
             if !players.iter_mut().any(
-                |(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count)| {
+                |(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count, mut sprite, mut animation_state)| {
                     let player_updatable = player.id == server_tick_update.player.id
                         && unique_tick_count.get_inner() <= server_tick_update.tick_count;
 
                     if player_updatable {
+                        // Only modify the animation's state if the player has moved!
+                        if transfrom.translation != server_tick_update.position.translation {
+                            if let Some(atlas) = &mut sprite.texture_atlas {
+                                atlas.index = animation_state.animate_state(time.delta());
+                            }
+                        }
+
                         *player = server_tick_update.player.clone();
                         *transfrom = server_tick_update.position;
                         *velocity = server_tick_update.velocity;
@@ -61,6 +77,10 @@ pub fn handle_server_output(
                     player_updatable
                 },
             ) {
+                let animation_state = AnimationState::new(Timer::new(Duration::from_secs_f32(0.1), bevy::time::TimerMode::Repeating), 6);
+                
+                let starting_anim_idx = animation_state.animation_idx;
+                
                 commands
                     .spawn(RigidBody::Dynamic)
                     .insert(Collider::ball(20.0))
@@ -72,6 +92,8 @@ pub fn handle_server_output(
                     .insert(Ccd::enabled())
                     .insert(Velocity::default())
                     .insert(UniqueLastTickCount::new(0))
+                    .insert(animation_state)
+                    .insert(Sprite::from_atlas_image(asset_server.load("../assets/default_texture.png"), TextureAtlas { layout, index: starting_anim_idx }))
                     .insert(server_tick_update.player);
 
                 break;
@@ -84,7 +106,7 @@ pub fn handle_server_output(
             match remote_request.request {
                 punchafriend::networking::ServerRequest::PlayerDisconnect => {
                     // Find the Entity with the designated uuid
-                    for (entity, player, _, _, _) in players.iter() {
+                    for (entity, player, _, _, _, _, _) in players.iter() {
                         // Check for the correct uuid
                         if player.id == uuid {
                             // Despawn the entity
@@ -103,7 +125,7 @@ pub fn handle_server_output(
             match connection {
                 Ok(client_connection) => {
                     // Iterate over all of the players
-                    for (entity, _, _, _, _) in players.iter() {
+                    for (entity, _, _, _, _, _, _) in players.iter() {
                         // Despawn all of the existing players, to clear out players left from a different match
                         commands.entity(entity).despawn();
                     }
@@ -209,6 +231,7 @@ pub fn setup_game(
     mut winit_settings: ResMut<WinitSettings>,
     mut framerate: ResMut<FramepaceSettings>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     // Setup graphics
     commands.spawn(Camera2d);
@@ -235,7 +258,7 @@ pub fn setup_game(
 
     // Push the file name
     app_data_path.push("temp");
-    
+
     // Read data and decompress it
     match fs::read(app_data_path) {
         Ok(read_bytes) => {
@@ -243,38 +266,22 @@ pub fn setup_game(
             let decompressed_data = miniz_oxide::inflate::decompress_to_vec(&read_bytes).unwrap();
 
             // Serialize bytes into struct
-            let data: ApplicationCtx = rmp_serde::from_slice(&decompressed_data).unwrap_or_default();
+            let data: ApplicationCtx =
+                rmp_serde::from_slice(&decompressed_data).unwrap_or_default();
 
             // Set data
             *app_ctx = data;
-        },
+        }
         Err(_err) => {
             //The save didnt exist
-        },
+        }
     }
+
+    // Create the texture atlas grid
+    app_ctx.texture_atlas_layout_handle = texture_atlas_layouts.add(TextureAtlasLayout::from_grid(UVec2::new(50, 64), 7, 1, Some(UVec2::new(20, 0)), None));
 }
 
-fn setup_textures(
-    commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-    path: PathBuf,
-    app_ctx: ResMut<ApplicationCtx>,
-) {
-    let texture: bevy::asset::Handle<Image> = asset_server.load(path);
-    let layout = TextureAtlasLayout::from_grid(UVec2::splat(24), 7, 1, None, None);
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
-
-    Sprite::from_atlas_image(
-        texture,
-        TextureAtlas {
-            layout: texture_atlas_layout,
-            index: 0,
-        },
-    );
-}
-
-pub fn exit_handler(exit_events: EventReader<AppExit>, ui_state: Res<ApplicationCtx>) {
+pub fn exit_handler(_exit_events: EventReader<AppExit>, ui_state: Res<ApplicationCtx>) {
     // Get the path of the %APPDATA% key.
     #[cfg(target_os = "windows")]
     let mut app_data_path = PathBuf::from(std::env::var("APPDATA").unwrap());
@@ -291,10 +298,17 @@ pub fn exit_handler(exit_events: EventReader<AppExit>, ui_state: Res<Application
 
     // Push the file name
     app_data_path.push("temp");
-    
+
     // Serialize data
     let serialized_data = rmp_serde::to_vec(&*ui_state).unwrap();
 
     // Write data before compressing it
-    fs::write(app_data_path, miniz_oxide::deflate::compress_to_vec(&serialized_data, CompressionLevel::BestCompression as u8)).unwrap(); 
+    fs::write(
+        app_data_path,
+        miniz_oxide::deflate::compress_to_vec(
+            &serialized_data,
+            CompressionLevel::BestCompression as u8,
+        ),
+    )
+    .unwrap();
 }

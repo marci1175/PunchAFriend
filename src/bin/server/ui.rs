@@ -11,7 +11,7 @@ use bevy_egui::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
-    game::{collision::CollisionGroupSet},
+    game::collision::CollisionGroupSet,
     networking::server::{setup_remote_client_handler, ServerInstance},
     server::ApplicationCtx,
     UiLayer,

@@ -31,3 +31,4 @@ dashmap = {version = "6.1.0", features = ["serde"]}
 bevy_framepace = "0.18.1"
 console-subscriber = "0.4.1"
 miniz_oxide = "0.8.5"
+image = "0.25.5"

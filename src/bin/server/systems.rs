@@ -23,9 +23,9 @@ use punchafriend::{
         pawns::{handle_game_input, Player},
         RandomEngine,
     },
-    networking::{server::notify_client_about_player_disconnect, ServerTickUpdate},
+    networking::{server::notify_client_about_player_disconnect, ServerTickUpdate, GameInput},
     server::ApplicationCtx,
-    GameInput, MapElement,
+    MapElement,
 };
 
 pub fn setup_game(
@@ -88,8 +88,6 @@ pub fn tick(
                         );
 
                         if matches!(*action, GameInput::Exit) {
-                            println!("Exited");
-
                             let mut entity_commands = commands.entity(query_item.0);
 
                             entity_commands.despawn();

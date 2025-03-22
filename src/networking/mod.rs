@@ -3,7 +3,7 @@ use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::{game::pawns::Player, GameInput};
+use crate::game::pawns::Player;
 
 pub mod client;
 pub mod server;
@@ -102,3 +102,17 @@ where
 }
 
 pub const UDP_DATAGRAM_SIZE: usize = 65536;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum GameInput {
+    MoveJump,
+    MoveDuck,
+    MoveRight,
+    MoveLeft,
+    Attack,
+
+    Defend,
+
+    Join,
+    Exit,
+}

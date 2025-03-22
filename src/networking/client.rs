@@ -10,10 +10,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::{
-    networking::{RemoteClientRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE},
-    GameInput,
-};
+use crate::networking::{GameInput, RemoteClientRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{write_to_buf_with_len, EndpointMetadata, RemoteServerRequest, ServerMetadata};
 

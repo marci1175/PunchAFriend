@@ -1,10 +1,12 @@
 mod app;
-mod ui;
 mod systems;
-
+mod ui;
 
 use bevy::{
-    app::{App, FixedUpdate, PluginGroup, Startup, Update}, log::LogPlugin, render::texture::ImagePlugin, DefaultPlugins
+    app::{App, FixedUpdate, PluginGroup, Startup, Update},
+    log::LogPlugin,
+    render::texture::ImagePlugin,
+    DefaultPlugins,
 };
 use bevy_egui::EguiPlugin;
 use bevy_rapier2d::{
@@ -18,11 +20,16 @@ use ui::ui_system;
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(DefaultPlugins.build().set(LogPlugin {
-        filter: "info,wgpu_core=warn,wgpu_hal=off".into(),
-        level: bevy::log::Level::DEBUG,
-        ..Default::default()
-    }).set(ImagePlugin::default_nearest()));
+    app.add_plugins(
+        DefaultPlugins
+            .build()
+            .set(LogPlugin {
+                filter: "info,wgpu_core=warn,wgpu_hal=off".into(),
+                level: bevy::log::Level::DEBUG,
+                ..Default::default()
+            })
+            .set(ImagePlugin::default_nearest()),
+    );
 
     app.add_plugins(EguiPlugin);
     app.add_plugins(bevy_framepace::FramepacePlugin);

@@ -1,8 +1,14 @@
-
 use bevy::{
-    asset::Assets, ecs::{
-        entity::Entity, system::{Commands, Query, Res, ResMut}
-    }, input::{keyboard::KeyCode, ButtonInput}, render::mesh::Mesh, sprite::TextureAtlasLayout, time::Time, transform::components::Transform
+    asset::Assets,
+    ecs::{
+        entity::Entity,
+        system::{Commands, Query, Res, ResMut},
+    },
+    input::{keyboard::KeyCode, ButtonInput},
+    render::mesh::Mesh,
+    sprite::TextureAtlasLayout,
+    time::Time,
+    transform::components::Transform,
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, Pos2, RichText, Sense, Slider},
@@ -14,7 +20,8 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Player},
-    networking::client::ClientConnection, PauseWindowState, UiLayer,
+    networking::client::ClientConnection,
+    PauseWindowState, UiLayer,
 };
 
 use crate::systems::reset_connection_and_ui;
