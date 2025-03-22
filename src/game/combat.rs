@@ -3,7 +3,7 @@ use bevy::{
     time::Timer,
     transform::components::Transform,
 };
-use bevy_rapier2d::prelude::{ActiveEvents, Collider};
+use bevy_rapier2d::prelude::{ActiveEvents, Collider, Sensor};
 use rand::{rngs::SmallRng, Rng};
 use std::time::Duration;
 use strum::EnumDiscriminants;
@@ -117,6 +117,7 @@ pub fn spawn_attack(
             *transform,
             entity,
         ))
+        .insert(Sensor)
         .insert(collision_groups.attack_obj)
         .insert(attack_transform);
 }

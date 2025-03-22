@@ -150,7 +150,7 @@ pub fn check_for_collision_with_attack_object(
                 ) = (attack_obj_query_result, foreign_character_query_result)
                 {
                     // We should not apply any forces if the attack hit the player who has spawned the original attack.
-                    if attack_object.attack_by == foreign_entity {
+                    if dbg!(attack_object.attack_by) == dbg!(foreign_entity) {
                         continue;
                     }
 

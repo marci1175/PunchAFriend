@@ -121,7 +121,7 @@ pub fn setup_remote_client_handler(
                             let mut worlds_commands = main_ctx.world.commands();
 
                             worlds_commands.spawn(RigidBody::Dynamic)
-                            .insert(Collider::ball(20.0))
+                            .insert(Collider::cuboid(20.0, 30.0))
                             .insert(Transform::from_xyz(0., 100., 0.))
                             .insert(LockedAxes::ROTATION_LOCKED)
                             .insert(AdditionalMassProperties::Mass(0.1))

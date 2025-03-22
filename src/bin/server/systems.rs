@@ -23,7 +23,7 @@ use punchafriend::{
         pawns::{handle_game_input, Player},
         RandomEngine,
     },
-    networking::{server::notify_client_about_player_disconnect, ServerTickUpdate, GameInput},
+    networking::{server::notify_client_about_player_disconnect, GameInput, ServerTickUpdate},
     server::ApplicationCtx,
     MapElement,
 };

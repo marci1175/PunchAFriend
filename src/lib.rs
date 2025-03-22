@@ -95,13 +95,18 @@ pub mod server {
     }
 }
 
-pub mod client {   
-    use std::{path::PathBuf, sync::Arc};
+pub mod client {
+    use std::path::PathBuf;
 
-    use parking_lot::RwLock;
+    
     use tokio::sync::mpsc::Sender;
 
-    use bevy::{asset::{Handle, RenderAssetUsages, StrongHandle}, ecs::system::Resource, image::Image, math::UVec2, sprite::TextureAtlasLayout};
+    use bevy::{
+        asset::Handle,
+        ecs::system::Resource,
+        math::uvec2,
+        sprite::TextureAtlasLayout,
+    };
 
     use egui_toast::Toasts;
 
@@ -153,7 +158,7 @@ pub mod client {
         pub settings: Settings,
 
         #[serde(skip)]
-        pub texture_atlas_layout_handle: Handle<TextureAtlasLayout>,
+        pub texture_atlas_layouts: Handle<TextureAtlasLayout>,
     }
 
     impl Default for ApplicationCtx {
@@ -171,7 +176,57 @@ pub mod client {
                 egui_toasts: Toasts::new(),
                 cancellation_token: CancellationToken::new(),
                 settings: Settings::default(),
-                texture_atlas_layout_handle: Handle::<TextureAtlasLayout>::default(),
+                texture_atlas_layouts: Handle::<TextureAtlasLayout>::default(),
+            }
+        }
+    }
+
+    pub struct TextureAtlasLayouts {
+        pub walk_atlas: TextureAtlasLayout,
+        pub jump_atlas: TextureAtlasLayout,
+        pub hurt_atlas: TextureAtlasLayout,
+        pub idle_atlas: TextureAtlasLayout,
+        pub attack_atlas: TextureAtlasLayout,
+    }
+
+    impl Default for TextureAtlasLayouts {
+        fn default() -> Self {
+            Self {
+                walk_atlas: TextureAtlasLayout::from_grid(
+                    uvec2(50, 64),
+                    7,
+                    1,
+                    Some(uvec2(20, 0)),
+                    None,
+                ),
+                jump_atlas: TextureAtlasLayout::from_grid(
+                    uvec2(50, 64),
+                    6,
+                    1,
+                    Some(uvec2(20, 0)),
+                    None,
+                ),
+                attack_atlas: TextureAtlasLayout::from_grid(
+                    uvec2(50, 64),
+                    5,
+                    1,
+                    Some(uvec2(20, 0)),
+                    None,
+                ),
+                idle_atlas: TextureAtlasLayout::from_grid(
+                    uvec2(50, 64),
+                    4,
+                    1,
+                    Some(uvec2(20, 0)),
+                    None,
+                ),
+                hurt_atlas: TextureAtlasLayout::from_grid(
+                    uvec2(50, 64),
+                    2,
+                    1,
+                    Some(uvec2(20, 0)),
+                    None,
+                ),
             }
         }
     }

@@ -1,13 +1,23 @@
 use std::{fs, path::PathBuf, time::Duration};
 
 use bevy::{
-    app::AppExit, asset::{AssetServer, Assets, Handle}, core_pipeline::core_2d::Camera2d, ecs::{
+    app::AppExit,
+    asset::{AssetServer, Assets},
+    core_pipeline::core_2d::Camera2d,
+    ecs::{
         entity::Entity,
         event::EventReader,
         system::{Commands, Query, Res, ResMut},
-    }, image::Image, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout}, time::{Time, Timer}, transform::components::Transform, winit::{UpdateMode, WinitSettings}
+    },
+    input::{keyboard::KeyCode, ButtonInput},
+    math::UVec2,
+    render::mesh::Mesh,
+    sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout},
+    time::{Time, Timer},
+    transform::components::Transform,
+    winit::{UpdateMode, WinitSettings},
 };
-use bevy_framepace::{FramepaceSettings, Limiter};
+use bevy_framepace::FramepaceSettings;
 use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, LockedAxes, RigidBody, Velocity,
 };
@@ -17,8 +27,8 @@ use miniz_oxide::deflate::CompressionLevel;
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Player},
-    MapElement, PauseWindowState, UiLayer,
     networking::GameInput,
+    MapElement, PauseWindowState, UiLayer,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -36,7 +46,7 @@ pub fn handle_server_output(
             &mut Velocity,
             &mut UniqueLastTickCount,
             &mut Sprite,
-            &mut AnimationState
+            &mut AnimationState,
         ),
     >,
     mut commands: Commands<'_, '_>,
@@ -44,7 +54,7 @@ pub fn handle_server_output(
     asset_server: Res<AssetServer>,
     time: Res<Time>,
 ) {
-    let layout = app_ctx.texture_atlas_layout_handle.clone();
+    let layout = app_ctx.texture_atlas_layouts.clone();
 
     if let Some(client_connection) = &mut app_ctx.client_connection {
         while let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
@@ -54,7 +64,15 @@ pub fn handle_server_output(
             }
 
             if !players.iter_mut().any(
-                |(_e, mut player, mut transfrom, mut velocity, mut unique_tick_count, mut sprite, mut animation_state)| {
+                |(
+                    _e,
+                    mut player,
+                    mut transfrom,
+                    mut velocity,
+                    mut unique_tick_count,
+                    mut sprite,
+                    mut animation_state,
+                )| {
                     let player_updatable = player.id == server_tick_update.player.id
                         && unique_tick_count.get_inner() <= server_tick_update.tick_count;
 
@@ -77,13 +95,20 @@ pub fn handle_server_output(
                     player_updatable
                 },
             ) {
-                let animation_state = AnimationState::new(Timer::new(Duration::from_secs_f32(0.1), bevy::time::TimerMode::Repeating), 6);
-                
+                let animation_state = AnimationState::new(
+                    Timer::new(
+                        Duration::from_secs_f32(0.1),
+                        bevy::time::TimerMode::Repeating,
+                    ),
+                    6,
+                    crate::app::lib::AnimationType::Walk,
+                );
+
                 let starting_anim_idx = animation_state.animation_idx;
-                
+
                 commands
                     .spawn(RigidBody::Dynamic)
-                    .insert(Collider::ball(20.0))
+                    .insert(Collider::cuboid(20.0, 30.0))
                     .insert(server_tick_update.position)
                     .insert(AdditionalMassProperties::Mass(0.1))
                     .insert(ActiveEvents::COLLISION_EVENTS)
@@ -93,7 +118,13 @@ pub fn handle_server_output(
                     .insert(Velocity::default())
                     .insert(UniqueLastTickCount::new(0))
                     .insert(animation_state)
-                    .insert(Sprite::from_atlas_image(asset_server.load("../assets/default_texture.png"), TextureAtlas { layout, index: starting_anim_idx }))
+                    .insert(Sprite::from_atlas_image(
+                        asset_server.load("../assets/walk.png"),
+                        TextureAtlas {
+                            layout,
+                            index: starting_anim_idx,
+                        },
+                    ))
                     .insert(server_tick_update.player);
 
                 break;
@@ -116,6 +147,9 @@ pub fn handle_server_output(
                             break;
                         }
                     }
+                },
+                punchafriend::networking::ServerRequest::GameFlowControl(game_flow_control) => {
+                    
                 }
             }
         }
@@ -229,7 +263,7 @@ pub fn setup_game(
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
     mut winit_settings: ResMut<WinitSettings>,
-    mut framerate: ResMut<FramepaceSettings>,
+    framerate: ResMut<FramepaceSettings>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
@@ -278,7 +312,13 @@ pub fn setup_game(
     }
 
     // Create the texture atlas grid
-    app_ctx.texture_atlas_layout_handle = texture_atlas_layouts.add(TextureAtlasLayout::from_grid(UVec2::new(50, 64), 7, 1, Some(UVec2::new(20, 0)), None));
+    app_ctx.texture_atlas_layouts = texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+        UVec2::new(50, 64),
+        7,
+        1,
+        Some(UVec2::new(20, 0)),
+        None,
+    ));
 }
 
 pub fn exit_handler(_exit_events: EventReader<AppExit>, ui_state: Res<ApplicationCtx>) {

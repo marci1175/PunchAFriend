@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::transform::components::Transform;
 use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
@@ -23,6 +25,21 @@ pub struct RemoteServerRequest {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum ServerRequest {
     PlayerDisconnect,
+    GameFlowControl(GameFlowControl),
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum GameFlowControl {
+    Pause,
+    Intermission(IntermissionData),
+    OngoingGame,
+}
+
+/// This serves as all of the information necesarry for this intermission.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct IntermissionData {
+    map_type: (),
+    intermission_duration_left: Duration,
 }
 
 /// This server as a way for the server to send the state of an entity in the world.

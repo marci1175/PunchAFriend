@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use bevy::{
-    ecs::{component::Component, system::Res},
-    time::{Time, Timer},
+    ecs::component::Component,
+    time::Timer,
 };
 
 #[derive(Debug, Component, Default)]
@@ -27,15 +27,24 @@ impl UniqueLastTickCount {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum AnimationType {
+    Walk,
+    Attack,
+    Hurt,
+    Jump,
+    Idle,
+}
+
 #[derive(Debug, Component, Clone)]
-/// This serves as a way to manage the state of the entities' animation.
+/// This serves as a way to manage the state of the entities' animations.
 /// This does not contain any textures, this is just a counter to keep track of the index.
 pub struct AnimationState {
     /// The built-in timer help keep track of the timing of the animations.
     pub timer: Timer,
 
     /// The type of the ongoing animation, like jumping, walking, etc.
-    pub animation_type: usize,
+    pub animation_type: AnimationType,
 
     /// The state of the ongoing animation, like which animated frame of an animated jump.
     pub animation_idx: usize,
@@ -44,23 +53,12 @@ pub struct AnimationState {
     pub animation_idx_max: usize,
 }
 
-impl Default for AnimationState {
-    fn default() -> Self {
-        Self {
-            timer: Timer::new(Duration::from_secs(1), bevy::time::TimerMode::Repeating),
-            animation_type: 0,
-            animation_idx: 0,
-            animation_idx_max: 0,
-        }
-    }
-}
-
 impl AnimationState {
     /// Creates a new [`AnimationState`] instance.
-    pub fn new(timer: Timer, animation_idx_max: usize) -> Self {
+    pub fn new(timer: Timer, animation_idx_max: usize, animation_type: AnimationType) -> Self {
         Self {
             timer,
-            animation_type: 0,
+            animation_type,
             animation_idx: 0,
             animation_idx_max,
         }
@@ -74,9 +72,7 @@ impl AnimationState {
 
         self.animation_idx += self.timer.times_finished_this_tick() as usize;
 
-        if self.animation_idx_max <= self.animation_idx {
-            self.animation_idx %= self.animation_idx_max;
-        }
+        self.animation_idx %= self.animation_idx_max;
 
         self.animation_idx
     }
