@@ -21,11 +21,11 @@ use punchafriend::{
     game::{
         collision::{check_for_collision_with_map_and_player, CollisionGroupSet},
         pawns::{handle_game_input, Player},
-        RandomEngine,
     },
     networking::{server::notify_client_about_player_disconnect, GameInput, ServerTickUpdate},
     server::ApplicationCtx,
     MapElement,
+    RandomEngine,
 };
 
 pub fn setup_game(

@@ -8,11 +8,10 @@ use bevy_rapier2d::{
     render::RapierDebugRenderPlugin,
 };
 use punchafriend::{
-    game::{
+    game::
         collision::{check_for_collision_with_attack_object, CollisionGroupSet},
-        RandomEngine,
-    },
     server::ApplicationCtx,
+    RandomEngine,
 };
 
 fn main() {

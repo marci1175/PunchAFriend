@@ -147,10 +147,8 @@ pub fn handle_server_output(
                             break;
                         }
                     }
-                },
-                punchafriend::networking::ServerRequest::GameFlowControl(game_flow_control) => {
-                    
                 }
+                punchafriend::networking::ServerRequest::GameFlowControl(game_flow_control) => {}
             }
         }
     } else {
