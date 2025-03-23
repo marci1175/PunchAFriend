@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use bevy::{ecs::component::Component, time::Timer};
+use bevy::{
+    ecs::{component::Component, system::Resource},
+    time::Timer,
+    transform::components::Transform,
+};
 
 #[derive(Debug, Component, Default)]
 /// This struct serves as a way for clients to keep track of the other players' ticks.
@@ -24,24 +28,12 @@ impl UniqueLastTickCount {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum AnimationType {
-    Walk,
-    Attack,
-    Hurt,
-    Jump,
-    Idle,
-}
-
 #[derive(Debug, Component, Clone)]
 /// This serves as a way to manage the state of the entities' animations.
 /// This does not contain any textures, this is just a counter to keep track of the index.
 pub struct AnimationState {
     /// The built-in timer help keep track of the timing of the animations.
     pub timer: Timer,
-
-    /// The type of the ongoing animation, like jumping, walking, etc.
-    pub animation_type: AnimationType,
 
     /// The state of the ongoing animation, like which animated frame of an animated jump.
     pub animation_idx: usize,
@@ -52,13 +44,21 @@ pub struct AnimationState {
 
 impl AnimationState {
     /// Creates a new [`AnimationState`] instance.
-    pub fn new(timer: Timer, animation_idx_max: usize, animation_type: AnimationType) -> Self {
+    pub fn new(timer: Timer, animation_idx_max: usize, animation_idx_begin: usize) -> Self {
         Self {
             timer,
-            animation_type,
-            animation_idx: 0,
+            // animation_type,
+            animation_idx: animation_idx_begin,
             animation_idx_max,
         }
+    }
+
+    pub fn set_idx_max(&mut self, max: usize) {
+        self.animation_idx_max = max;
+    }
+
+    pub fn set_current_idx(&mut self, idx: usize) {
+        self.animation_idx = idx;
     }
 
     /// Modifies the state of the animation on the current [`AnimationState`] instance.
@@ -69,8 +69,28 @@ impl AnimationState {
 
         self.animation_idx += self.timer.times_finished_this_tick() as usize;
 
-        self.animation_idx %= self.animation_idx_max;
+        self.animation_idx = self
+            .animation_idx
+            .checked_rem(self.animation_idx_max)
+            .unwrap_or_default();
 
         self.animation_idx
+    }
+}
+
+#[derive(Debug, Default, Clone, Component)]
+pub struct LastTransformState(Transform);
+
+impl LastTransformState {
+    pub fn new(inner: Transform) -> Self {
+        Self(inner)
+    }
+
+    pub fn set_inner(&mut self, inner: Transform) {
+        self.0 = inner;
+    }
+
+    pub fn get_inner(&self) -> &Transform {
+        &self.0
     }
 }

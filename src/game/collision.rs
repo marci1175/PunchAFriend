@@ -51,7 +51,9 @@ impl CollisionGroupSet {
             ),
             player: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::ForeignCharacter as u32),
-                Group::from_bits_truncate(0b1111),
+                Group::from_bits_truncate(
+                    CollisionGroup::MapObject as u32 | CollisionGroup::AttackObj as u32,
+                ),
             ),
             attack_obj: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::AttackObj as u32),

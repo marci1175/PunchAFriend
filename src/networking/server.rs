@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::{
     game::{collision::CollisionGroupSet, pawns::Player},
-    networking::UDP_DATAGRAM_SIZE,
+    networking::{GameInput, UDP_DATAGRAM_SIZE},
 };
 
 use super::{
@@ -111,10 +111,16 @@ pub fn setup_remote_client_handler(
                 },
 
                 Ok((mut tcp_stream, socket_addr)) = handle_incoming_request(tcp_listener.clone()) => {
+                    // Create a new unique id for the connected client
                     let uuid = Uuid::new_v4();
 
+                    // Exchange metadata between client and server
                     if let Ok(client_metadata) = exchange_metadata(&mut tcp_stream, metadata.into_server_metadata(uuid)).await {
+                        // Save the connected clients handle and ports
                         connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, tcp_stream));
+                        
+                        // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
+                        sender.send((RemoteClientRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -123,13 +129,13 @@ pub fn setup_remote_client_handler(
                             worlds_commands.spawn(RigidBody::Dynamic)
                             .insert(Collider::cuboid(20.0, 30.0))
                             .insert(Transform::from_xyz(0., 100., 0.))
+                            .insert(ActiveEvents::COLLISION_EVENTS)
                             .insert(LockedAxes::ROTATION_LOCKED)
                             .insert(AdditionalMassProperties::Mass(0.1))
                             .insert(KinematicCharacterController {
                                 apply_impulse_to_dynamic_bodies: false,
                                 ..Default::default()
                             })
-                            .insert(ActiveEvents::COLLISION_EVENTS)
                             .insert(collision_groups.player)
                             .insert(Ccd::enabled())
                             .insert(Velocity::default())

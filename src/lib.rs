@@ -179,56 +179,6 @@ pub mod client {
         }
     }
 
-    pub struct TextureAtlasLayouts {
-        pub walk_atlas: TextureAtlasLayout,
-        pub jump_atlas: TextureAtlasLayout,
-        pub hurt_atlas: TextureAtlasLayout,
-        pub idle_atlas: TextureAtlasLayout,
-        pub attack_atlas: TextureAtlasLayout,
-    }
-
-    impl Default for TextureAtlasLayouts {
-        fn default() -> Self {
-            Self {
-                walk_atlas: TextureAtlasLayout::from_grid(
-                    uvec2(50, 64),
-                    7,
-                    1,
-                    Some(uvec2(20, 0)),
-                    None,
-                ),
-                jump_atlas: TextureAtlasLayout::from_grid(
-                    uvec2(50, 64),
-                    6,
-                    1,
-                    Some(uvec2(20, 0)),
-                    None,
-                ),
-                attack_atlas: TextureAtlasLayout::from_grid(
-                    uvec2(50, 64),
-                    5,
-                    1,
-                    Some(uvec2(20, 0)),
-                    None,
-                ),
-                idle_atlas: TextureAtlasLayout::from_grid(
-                    uvec2(50, 64),
-                    4,
-                    1,
-                    Some(uvec2(20, 0)),
-                    None,
-                ),
-                hurt_atlas: TextureAtlasLayout::from_grid(
-                    uvec2(50, 64),
-                    2,
-                    1,
-                    Some(uvec2(20, 0)),
-                    None,
-                ),
-            }
-        }
-    }
-
     #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
     pub struct Settings {
         pub fps: f64,

@@ -7,12 +7,14 @@ use bevy::{
     ecs::{
         entity::Entity,
         event::EventReader,
+        query::Changed,
         system::{Commands, Query, Res, ResMut},
     },
     input::{keyboard::KeyCode, ButtonInput},
     math::UVec2,
     render::mesh::Mesh,
     sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout},
+    text::cosmic_text::Change,
     time::{Time, Timer},
     transform::components::Transform,
     winit::{UpdateMode, WinitSettings},
@@ -32,7 +34,15 @@ use punchafriend::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::app::lib::{AnimationState, UniqueLastTickCount};
+use crate::app::lib::{AnimationState, LastTransformState, UniqueLastTickCount};
+
+pub fn handle_last_entity_transform(
+    mut moved_players: Query<(&mut LastTransformState, &Transform), Changed<Transform>>,
+) {
+    for (mut last_transf_state, current_transf_state) in moved_players.iter_mut() {
+        last_transf_state.set_inner(current_transf_state.clone());
+    }
+}
 
 pub fn handle_server_output(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
@@ -47,6 +57,7 @@ pub fn handle_server_output(
             &mut UniqueLastTickCount,
             &mut Sprite,
             &mut AnimationState,
+            &LastTransformState,
         ),
     >,
     mut commands: Commands<'_, '_>,
@@ -58,11 +69,6 @@ pub fn handle_server_output(
 
     if let Some(client_connection) = &mut app_ctx.client_connection {
         while let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
-            // If the tick we have received is older than the newest one we have we drop it.
-            if client_connection.last_tick > server_tick_update.tick_count {
-                return;
-            }
-
             if !players.iter_mut().any(
                 |(
                     _e,
@@ -72,27 +78,44 @@ pub fn handle_server_output(
                     mut unique_tick_count,
                     mut sprite,
                     mut animation_state,
+                    _last_transform_state,
                 )| {
-                    let player_updatable = player.id == server_tick_update.player.id
-                        && unique_tick_count.get_inner() <= server_tick_update.tick_count;
+                    // Check if the player was found
+                    let player_found = player.id == server_tick_update.player.id;
 
-                    if player_updatable {
+                    // If the entity was not found we spawn a new one
+                    if !player_found {
+                        return false;
+                    }
+
+                    // Check if the player is updateable, ie moved
+                    // If it moved update its position
+                    if unique_tick_count.get_inner() < server_tick_update.tick_count {
                         // Only modify the animation's state if the player has moved!
                         if transfrom.translation != server_tick_update.position.translation {
+                            // Animate using the sprite sheet
                             if let Some(atlas) = &mut sprite.texture_atlas {
                                 atlas.index = animation_state.animate_state(time.delta());
                             }
                         }
 
+                        // Set new infromation
                         *player = server_tick_update.player.clone();
                         *transfrom = server_tick_update.position;
                         *velocity = server_tick_update.velocity;
+
+                        // Change the animation to walk
+                        sprite.image = asset_server.load("../assets/walk.png");
+
+                        // Set the max idx
+                        animation_state.set_idx_max(7);
 
                         // Set the new tick count as the latest tick for this entity
                         unique_tick_count.with_tick(server_tick_update.tick_count);
                     }
 
-                    player_updatable
+                    // Return whether the player was found
+                    player_found
                 },
             ) {
                 let animation_state = AnimationState::new(
@@ -100,8 +123,8 @@ pub fn handle_server_output(
                         Duration::from_secs_f32(0.1),
                         bevy::time::TimerMode::Repeating,
                     ),
-                    6,
-                    crate::app::lib::AnimationType::Walk,
+                    1,
+                    0,
                 );
 
                 let starting_anim_idx = animation_state.animation_idx;
@@ -114,12 +137,13 @@ pub fn handle_server_output(
                     .insert(ActiveEvents::COLLISION_EVENTS)
                     .insert(LockedAxes::ROTATION_LOCKED)
                     .insert(collision_groups.player)
-                    .insert(Ccd::enabled())
                     .insert(Velocity::default())
                     .insert(UniqueLastTickCount::new(0))
+                    .insert(Ccd::enabled())
                     .insert(animation_state)
+                    .insert(LastTransformState::default())
                     .insert(Sprite::from_atlas_image(
-                        asset_server.load("../assets/walk.png"),
+                        asset_server.load("../assets/idle.png"),
                         TextureAtlas {
                             layout,
                             index: starting_anim_idx,
@@ -131,13 +155,24 @@ pub fn handle_server_output(
             }
         }
 
+        for (_, _, transform, _, _, mut sprite, mut anim_state, last_transform_state) in
+            players.iter_mut()
+        {
+            if *last_transform_state.get_inner() == *transform {
+                sprite.image = asset_server.load("../assets/idle.png");
+
+                anim_state.set_idx_max(0);
+                anim_state.set_current_idx(0);
+            }
+        }
+
         if let Ok(remote_request) = client_connection.remote_receiver.try_recv() {
             let uuid = remote_request.id;
 
             match remote_request.request {
                 punchafriend::networking::ServerRequest::PlayerDisconnect => {
                     // Find the Entity with the designated uuid
-                    for (entity, player, _, _, _, _, _) in players.iter() {
+                    for (entity, player, _, _, _, _, _, _) in players.iter() {
                         // Check for the correct uuid
                         if player.id == uuid {
                             // Despawn the entity
@@ -157,7 +192,7 @@ pub fn handle_server_output(
             match connection {
                 Ok(client_connection) => {
                     // Iterate over all of the players
-                    for (entity, _, _, _, _, _, _) in players.iter() {
+                    for (entity, _, _, _, _, _, _, _) in players.iter() {
                         // Despawn all of the existing players, to clear out players left from a different match
                         commands.entity(entity).despawn();
                     }

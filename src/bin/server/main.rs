@@ -8,8 +8,7 @@ use bevy_rapier2d::{
     render::RapierDebugRenderPlugin,
 };
 use punchafriend::{
-    game::
-        collision::{check_for_collision_with_attack_object, CollisionGroupSet},
+    game::collision::{check_for_collision_with_attack_object, CollisionGroupSet},
     server::ApplicationCtx,
     RandomEngine,
 };
@@ -33,7 +32,8 @@ fn main() {
     app.insert_resource(RandomEngine::new());
 
     app.add_systems(Startup, systems::setup_window);
-    app.add_systems(FixedUpdate, systems::tick);
+    app.add_systems(FixedUpdate, systems::recv_tick);
+    app.add_systems(FixedUpdate, systems::send_tick);
     app.add_systems(FixedUpdate, systems::reset_jump_remaining_for_player);
     app.add_systems(FixedUpdate, check_for_collision_with_attack_object);
     app.add_systems(Update, ui::ui_system);
