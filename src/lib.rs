@@ -104,7 +104,7 @@ pub mod client {
 
     use tokio::sync::mpsc::Sender;
 
-    use bevy::{asset::Handle, ecs::system::Resource, math::uvec2, sprite::TextureAtlasLayout};
+    use bevy::{asset::Handle, ecs::system::Resource, sprite::TextureAtlasLayout};
 
     use egui_toast::Toasts;
 

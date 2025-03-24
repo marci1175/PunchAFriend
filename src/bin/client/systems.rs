@@ -14,7 +14,6 @@ use bevy::{
     math::UVec2,
     render::mesh::Mesh,
     sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout},
-    text::cosmic_text::Change,
     time::{Time, Timer},
     transform::components::Transform,
     winit::{UpdateMode, WinitSettings},
@@ -40,7 +39,7 @@ pub fn handle_last_entity_transform(
     mut moved_players: Query<(&mut LastTransformState, &Transform), Changed<Transform>>,
 ) {
     for (mut last_transf_state, current_transf_state) in moved_players.iter_mut() {
-        last_transf_state.set_inner(current_transf_state.clone());
+        last_transf_state.set_inner(*current_transf_state);
     }
 }
 

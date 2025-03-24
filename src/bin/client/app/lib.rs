@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bevy::{
-    ecs::{component::Component, system::Resource},
+    ecs::component::Component,
     time::Timer,
     transform::components::Transform,
 };

@@ -6,7 +6,7 @@ use bevy::{
         event::EventReader,
         query::{Changed, With},
         system::{Commands, Query, Res, ResMut},
-        world::{self, Mut, World},
+        world::{Mut},
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
