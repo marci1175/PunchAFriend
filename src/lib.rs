@@ -1,10 +1,7 @@
 pub mod game;
 pub mod networking;
 
-use bevy::{
-    ecs::{component::Component, system::Resource},
-    math::Vec2,
-};
+use bevy::ecs::{component::Component, system::Resource};
 use rand::{rngs::SmallRng, SeedableRng};
 
 #[derive(Component, Clone)]

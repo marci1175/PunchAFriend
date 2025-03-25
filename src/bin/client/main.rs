@@ -3,7 +3,11 @@ mod systems;
 mod ui;
 
 use bevy::{
-    app::{App, FixedUpdate, PluginGroup, Startup, Update}, ecs::schedule::IntoSystemConfigs, log::LogPlugin, render::texture::ImagePlugin, DefaultPlugins
+    app::{App, FixedUpdate, PluginGroup, Startup, Update},
+    ecs::schedule::IntoSystemConfigs,
+    log::LogPlugin,
+    render::texture::ImagePlugin,
+    DefaultPlugins,
 };
 use bevy_egui::EguiPlugin;
 use bevy_rapier2d::{
@@ -43,7 +47,10 @@ fn main() {
 
     app.add_systems(Startup, setup_game);
     app.add_systems(Update, ui_system);
-    app.add_systems(FixedUpdate, handle_server_output.before(handle_last_entity_transform));
+    app.add_systems(
+        FixedUpdate,
+        handle_server_output.before(handle_last_entity_transform),
+    );
     app.add_systems(FixedUpdate, handle_last_entity_transform);
     app.add_systems(Update, handle_user_input);
     app.add_systems(Update, exit_handler);

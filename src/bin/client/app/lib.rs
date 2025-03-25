@@ -1,10 +1,6 @@
 use std::time::Duration;
 
-use bevy::{
-    ecs::component::Component,
-    time::Timer,
-    transform::components::Transform,
-};
+use bevy::{ecs::component::Component, time::Timer, transform::components::Transform};
 
 #[derive(Debug, Component, Default)]
 /// This struct serves as a way for clients to keep track of the other players' ticks.
