@@ -5,15 +5,26 @@ use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::game::pawns::Player;
+use crate::game::{map::{MapInstance, MapObject}, pawns::Player};
 
 pub mod client;
 pub mod server;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct RemoteClientRequest {
+pub struct RemoteClientGameRequest {
     pub id: Uuid,
     pub inputs: Vec<GameInput>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct RemoteClientRequest {
+    pub id: Uuid,
+    pub input: ServerFlowControl,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum ServerFlowControl {
+    Vote(String)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -25,11 +36,11 @@ pub struct RemoteServerRequest {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum ServerRequest {
     PlayerDisconnect,
-    GameFlowControl(GameFlowControl),
+    ClientFlowControl(ClientFlowControl),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum GameFlowControl {
+pub enum ClientFlowControl {
     Pause,
     Intermission(IntermissionData),
     OngoingGame,
@@ -38,8 +49,8 @@ pub enum GameFlowControl {
 /// This serves as all of the information necesarry for this intermission.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct IntermissionData {
-    map_type: (),
-    intermission_duration_left: Duration,
+    pub selectable_maps: Vec<(String, usize)>,
+    pub intermission_duration_left: Duration,
 }
 
 /// This server as a way for the server to send the state of an entity in the world.

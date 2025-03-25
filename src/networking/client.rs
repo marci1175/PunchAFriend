@@ -10,7 +10,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::networking::{GameInput, RemoteClientRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
+use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{write_to_buf_with_len, EndpointMetadata, RemoteServerRequest, ServerMetadata};
 
@@ -200,7 +200,7 @@ async fn exchange_metadata(
 }
 
 async fn send_game_action(send: Arc<UdpSocket>, game_input: Vec<GameInput>, uuid: Uuid) {
-    let message_bytes = rmp_serde::to_vec(&RemoteClientRequest {
+    let message_bytes = rmp_serde::to_vec(&RemoteClientGameRequest {
         id: uuid,
         inputs: game_input,
     })

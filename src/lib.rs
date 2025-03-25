@@ -12,12 +12,6 @@ use rand::{rngs::SmallRng, SeedableRng};
 /// This is used to make difference between Entities which are a part of the obstacles contained in the map.
 pub struct MapElement;
 
-#[derive(Component, Clone)]
-pub struct MapObject {
-    pub size: Vec2,
-    pub avoid_collision_from: Direction,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 pub enum Direction {
     Left,

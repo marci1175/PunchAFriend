@@ -182,7 +182,7 @@ pub fn handle_server_output(
                         }
                     }
                 }
-                punchafriend::networking::ServerRequest::GameFlowControl(game_flow_control) => {}
+                punchafriend::networking::ServerRequest::ClientFlowControl(game_flow_control) => {}
             }
         }
     } else {

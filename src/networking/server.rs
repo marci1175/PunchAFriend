@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, RemoteServerRequest,
+    write_to_buf_with_len, EndpointMetadata, RemoteClientGameRequest, RemoteServerRequest,
     ServerMetadata, ServerRequest,
 };
 
@@ -49,7 +49,7 @@ pub struct ServerInstance {
     pub metadata: EndpointMetadata,
     pub tcp_listener_port: u16,
 
-    pub server_receiver: Option<Receiver<(RemoteClientRequest, SocketAddr)>>,
+    pub server_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
 
     pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
 }
@@ -89,7 +89,7 @@ pub fn setup_remote_client_handler(
 
     let client_game_socket_list = server_instance.connected_client_game_sockets.clone();
 
-    let (sender, receiver) = channel::<(RemoteClientRequest, SocketAddr)>(2000);
+    let (sender, receiver) = channel::<(RemoteClientGameRequest, SocketAddr)>(2000);
 
     let cancellation_token_clone = cancellation_token.clone();
 
@@ -120,7 +120,7 @@ pub fn setup_remote_client_handler(
                         connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, tcp_stream));
                         
                         // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
-                        sender.send((RemoteClientRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
+                        sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -159,7 +159,7 @@ async fn handle_incoming_request(
 fn setup_client_listener(
     socket: Arc<UdpSocket>,
     cancellation_token: CancellationToken,
-    client_request_channel: Sender<(RemoteClientRequest, SocketAddr)>,
+    client_request_channel: Sender<(RemoteClientGameRequest, SocketAddr)>,
     connected_clients: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
 ) {
     tokio::spawn(async move {
@@ -182,7 +182,7 @@ fn setup_client_listener(
                             // Check if the remote address has already been connected to the main server
                             if connected_clients.contains_key(&address) {
                                 // Serialize the bytes from the message
-                                if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientRequest>(&buf[4..]) {
+                                if let Ok(client_request) = rmp_serde::from_slice::<RemoteClientGameRequest>(&buf[4..]) {
                                     // Send the message to the server's receiver
                                     client_request_channel.send((client_request, address)).await.unwrap();
                                 }
