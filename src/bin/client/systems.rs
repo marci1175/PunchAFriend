@@ -166,10 +166,8 @@ pub fn handle_server_output(
         }
 
         if let Ok(remote_request) = client_connection.remote_receiver.try_recv() {
-            let uuid = remote_request.id;
-
             match remote_request.request {
-                punchafriend::networking::ServerRequest::PlayerDisconnect => {
+                punchafriend::networking::ServerRequest::PlayerDisconnect(uuid) => {
                     // Find the Entity with the designated uuid
                     for (entity, player, _, _, _, _, _, _) in players.iter() {
                         // Check for the correct uuid
@@ -182,7 +180,7 @@ pub fn handle_server_output(
                         }
                     }
                 }
-                punchafriend::networking::ServerRequest::ClientFlowControl(game_flow_control) => {}
+                punchafriend::networking::ServerRequest::ServerGameStateControl(game_flow_control) => {}
             }
         }
     } else {

@@ -4744,6 +4744,7 @@ dependencies = [
  "console-subscriber",
  "dashmap",
  "egui-toast",
+ "heck",
  "image",
  "log",
  "miniz_oxide",

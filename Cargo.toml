@@ -17,7 +17,7 @@ bevy_rapier2d = {version = "0.29.0", features = ["parallel", "serde-serialize", 
 tokio = {version = "1.43.0", features = ["full"]}
 mlua = {version = "0.10.3", features = ["luajit", "vendored", "send"]}
 rand = {version = "0.9.0", features = ["serde"]}
-strum = {version = "0.27.1", features = ["derive"]}
+strum = { version = "0.27.1", features = ["derive"] }
 parking_lot = "0.12.3"
 egui-toast = "0.16.0"
 bevy-tokio-tasks = "0.15.0"
@@ -32,3 +32,4 @@ bevy_framepace = "0.18.1"
 console-subscriber = "0.4.1"
 miniz_oxide = "0.8.5"
 image = "0.25.5"
+heck = "0.5.0"

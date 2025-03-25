@@ -5,51 +5,77 @@ use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::game::{map::{MapInstance, MapObject}, pawns::Player};
+use crate::game::{map::{MapInstance, MapNameDiscriminants, MapObject}, pawns::Player};
 
 pub mod client;
 pub mod server;
 
+
+/// This struct serves as a way to send a message by the clients, messages sent via the [`RemoteClientGameRequest`] are applied to the server's game world.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RemoteClientGameRequest {
+    /// The id of the client who has sent the message.
+    /// IDs are handed out to the clients on connection.
     pub id: Uuid,
+    /// The input of the clients connected to the server.
+    /// Multiple inputs can be input at once. 
     pub inputs: Vec<GameInput>,
 }
 
+/// This message type is used by the clients to send important information to the server.
+/// *These messages should be sent thorugh TCP, as they contain critical information.*
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RemoteClientRequest {
+    /// The id of the client who has sent the message.
+    /// IDs are handed out to the clients on connection.
     pub id: Uuid,
-    pub input: ServerFlowControl,
+    /// The request sent by the client to the server.
+    pub request: ClientRequest,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum ServerFlowControl {
-    Vote(String)
-}
-
+/// This message type is for the server to send critical information to the client.
+/// Example: Map change, state updates (intermission, pause, etc.). 
+/// *These messages should be sent thorugh TCP, as they contain critical information.*
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RemoteServerRequest {
-    pub id: Uuid,
+    /// The inner request of the message.
     pub request: ServerRequest,
 }
 
+/// The types of messages which can be sent over in the [`RemoteServerRequest`] instance. 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum ServerRequest {
-    PlayerDisconnect,
-    ClientFlowControl(ClientFlowControl),
+    /// This message is sent if a user disconnects from the server.
+    /// The server sends out this messaage to all of the clients to let them know that the user with the id (Inner value of this message) has disconnected.
+    PlayerDisconnect(Uuid),
+    /// This message is sent when the server wants to set a new state to the game.
+    /// Example: Pause state, intermission, ...
+    ServerGameStateControl(ServerGameStateControl),
 }
 
+/// The types of GameStates which a server can request a client to enter.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum ClientFlowControl {
+pub enum ServerGameStateControl {
+    /// Currently unused, may be used in the game to pause the match.
     Pause,
+    /// Intermission state, in an intermission state clients can vote on the next map.
     Intermission(IntermissionData),
+    /// Going game, this is sent if there is a game available to join immediately 
     OngoingGame,
 }
 
-/// This serves as all of the information necesarry for this intermission.
+/// The types of messages a client can sent to control the server. 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum ClientRequest {
+    /// This message is sent if the game is currently in an intermission state, where players can vote on the next map.
+    /// The inner value contain the name of the map the clients wants to vote on.
+    Vote(String)
+}
+
+/// The message the server sends to all the clients, to share all the important information about the current intermission. ie.: Maps available for voting, duration of the intermission.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct IntermissionData {
-    pub selectable_maps: Vec<(String, usize)>,
+    pub selectable_maps: Vec<MapNameDiscriminants>,
     pub intermission_duration_left: Duration,
 }
 

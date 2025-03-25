@@ -229,8 +229,7 @@ pub async fn notify_client_about_player_disconnect(
     uuid: Uuid,
 ) -> anyhow::Result<()> {
     let message = RemoteServerRequest {
-        id: uuid,
-        request: ServerRequest::PlayerDisconnect,
+        request: ServerRequest::PlayerDisconnect(uuid),
     };
 
     write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;
