@@ -117,6 +117,9 @@ pub fn ui_system(
                 });
         }
         punchafriend::UiLayer::GameMenu => {}
+        punchafriend::UiLayer::Intermission(_) => {
+            unimplemented!();
+        }
     }
 
     if app_ctx.server_instance.is_some() {

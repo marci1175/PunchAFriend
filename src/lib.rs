@@ -2,12 +2,8 @@ pub mod game;
 pub mod networking;
 
 use bevy::ecs::{component::Component, system::Resource};
+use networking::IntermissionData;
 use rand::{rngs::SmallRng, SeedableRng};
-
-#[derive(Component, Clone)]
-/// A MapElement instnace is an object which is a part of the map.
-/// This is used to make difference between Entities which are a part of the obstacles contained in the map.
-pub struct MapElement;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 pub enum Direction {
@@ -18,9 +14,10 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UiLayer {
     Game,
+    Intermission(IntermissionData),
     #[default]
     MainMenu,
     GameMenu,

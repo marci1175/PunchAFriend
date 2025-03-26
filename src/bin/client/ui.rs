@@ -11,7 +11,7 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_egui::{
-    egui::{self, Align2, Color32, Layout, Pos2, RichText, Sense, Slider},
+    egui::{self, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
     EguiContexts,
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
@@ -46,8 +46,36 @@ pub fn ui_system(
     app_ctx.egui_toasts.show(ctx);
 
     match app_ctx.ui_layer.clone() {
-        UiLayer::Game => {
-            // handle_user_input(app_ctx, keyboard_input);
+        UiLayer::Game => {}
+        UiLayer::Intermission(mut intermission_data) => {
+            // Tick the countdown timer
+            intermission_data
+                .intermission_duration_left
+                .tick(time.delta());
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.label(RichText::from("Vote for the next map!").size(20.).strong());
+
+                    ui.label(format!(
+                        "Time elapsed: {}s",
+                        intermission_data
+                            .intermission_duration_left
+                            .elapsed()
+                            .as_secs()
+                    ));
+                });
+
+                Grid::new("map_grid").show(ui, |ui| {
+                    for map in &intermission_data.selectable_maps {
+                        // Show the button to vote
+                        if ui.button(map.to_string()).clicked() {};
+
+                        // Display an image of the map
+                        // ui.image(source)
+                    }
+                });
+            });
         }
         UiLayer::MainMenu => {
             // Display main title.

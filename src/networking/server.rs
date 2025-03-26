@@ -7,7 +7,7 @@ use bevy_rapier2d::prelude::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use dashmap::DashMap;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpSocket, TcpStream, UdpSocket},
@@ -18,13 +18,13 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    game::{collision::CollisionGroupSet, pawns::Player},
+    game::{collision::CollisionGroupSet, map::MapInstance, pawns::Player},
     networking::{GameInput, UDP_DATAGRAM_SIZE},
 };
 
 use super::{
     write_to_buf_with_len, EndpointMetadata, RemoteClientGameRequest, RemoteServerRequest,
-    ServerMetadata, ServerRequest,
+    ServerGameState, ServerMetadata, ServerRequest,
 };
 
 #[derive(Debug, Clone)]
@@ -52,6 +52,8 @@ pub struct ServerInstance {
     pub server_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
 
     pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
+
+    pub game_state: Arc<RwLock<ServerGameState>>,
 }
 
 impl ServerInstance {
@@ -75,6 +77,9 @@ impl ServerInstance {
             server_receiver: None,
             metadata: EndpointMetadata::new(udp_socket_port),
             connected_client_game_sockets: Arc::new(DashMap::new()),
+            game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
+                MapInstance::original_map(),
+            ))),
         })
     }
 }
@@ -98,6 +103,8 @@ pub fn setup_remote_client_handler(
     let metadata = server_instance.metadata;
     let connected_clients_clone = client_game_socket_list.clone();
 
+    let server_game_state = server_instance.game_state.clone();
+
     server_instance.server_receiver = Some(receiver);
 
     // Spawn the incoming connection accepter thread
@@ -116,11 +123,8 @@ pub fn setup_remote_client_handler(
 
                     // Exchange metadata between client and server
                     if let Ok(client_metadata) = exchange_metadata(&mut tcp_stream, metadata.into_server_metadata(uuid)).await {
-                        // Save the connected clients handle and ports
-                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, tcp_stream));
-                        
-                        // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
-                        sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
+                        // Send the server's game state
+                        send_game_state(&mut tcp_stream, server_game_state.clone()).await;
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -141,6 +145,12 @@ pub fn setup_remote_client_handler(
                             .insert(Velocity::default())
                             .insert(Player::new_from_id(uuid)); 
                         }).await;
+
+                        // Save the connected clients handle and ports
+                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, tcp_stream));
+                        
+                        // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
+                        sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
                     }
                 }
             }
@@ -230,6 +240,19 @@ pub async fn notify_client_about_player_disconnect(
 ) -> anyhow::Result<()> {
     let message = RemoteServerRequest {
         request: ServerRequest::PlayerDisconnect(uuid),
+    };
+
+    write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;
+
+    Ok(())
+}
+
+pub async fn send_game_state(
+    tcp_stream: &mut TcpStream,
+    server_game_state: Arc<RwLock<ServerGameState>>,
+) -> anyhow::Result<()> {
+    let message = RemoteServerRequest {
+        request: ServerRequest::ServerGameStateControl(server_game_state.read().clone()),
     };
 
     write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;

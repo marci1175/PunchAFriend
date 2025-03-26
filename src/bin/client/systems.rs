@@ -27,9 +27,9 @@ use egui_toast::{Toast, ToastOptions};
 use miniz_oxide::deflate::CompressionLevel;
 use punchafriend::{
     client::ApplicationCtx,
-    game::{collision::CollisionGroupSet, pawns::Player},
+    game::{collision::CollisionGroupSet, map::{MapElement, MapInstance}, pawns::Player},
     networking::GameInput,
-    MapElement, PauseWindowState, UiLayer,
+    PauseWindowState, UiLayer,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -44,6 +44,7 @@ pub fn handle_last_entity_transform(
 }
 
 pub fn handle_server_output(
+    game_objects: Query<(Entity, &MapElement)>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     mut players: Query<
         '_,
@@ -181,8 +182,21 @@ pub fn handle_server_output(
                     }
                 }
                 punchafriend::networking::ServerRequest::ServerGameStateControl(
-                    game_flow_control,
-                ) => {}
+                    game_state_control,
+                ) => match game_state_control {
+                    punchafriend::networking::ServerGameState::Pause => {
+                        unimplemented!()
+                    }
+                    punchafriend::networking::ServerGameState::Intermission(intermission_data) => {
+                        app_ctx.ui_layer = UiLayer::Intermission(intermission_data);
+                    }
+                    punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
+                        // Setup map for client-side from a mapinstance
+                        setup_map_from_mapinstance(map_instance, commands, collision_groups, game_objects);
+
+                        app_ctx.ui_layer = UiLayer::Game;
+                    }
+                },
             }
         }
     } else {
@@ -216,6 +230,31 @@ pub fn handle_server_output(
                 }
             }
         }
+    }
+}
+
+pub fn setup_map_from_mapinstance(
+    map_instance: MapInstance,
+    mut commands: Commands,
+    collision_groups: Res<CollisionGroupSet>,
+    game_objects: Query<(Entity, &MapElement)>,
+    // meshes: ResMut<Assets<Mesh>>,
+    // materials: ResMut<Assets<ColorMaterial>>,
+    // mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+) {
+    // Delete all currently existing map objects.
+    for (entity, game_object) in &game_objects {
+        commands.entity(entity).despawn();
+    }
+
+    for object in map_instance.objects {
+        commands
+        .spawn(Collider::cuboid(object.size.x, object.size.y))
+        .insert(Transform::from_xyz(object.position.x, object.position.y, 0.))
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(collision_groups.map_object)
+        // .insert(Sprite {})
+        .insert(MapElement);
     }
 }
 
@@ -294,10 +333,10 @@ pub fn setup_game(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     mut winit_settings: ResMut<WinitSettings>,
     framerate: ResMut<FramepaceSettings>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
-    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     // Setup graphics
     commands.spawn(Camera2d);

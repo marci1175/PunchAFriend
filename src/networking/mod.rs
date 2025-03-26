@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use bevy::transform::components::Transform;
+use bevy::{time::Timer, transform::components::Transform};
 use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use crate::game::{
-    map::MapNameDiscriminants,
+    map::{MapInstance, MapNameDiscriminants},
     pawns::Player,
 };
 
@@ -52,18 +52,18 @@ pub enum ServerRequest {
     PlayerDisconnect(Uuid),
     /// This message is sent when the server wants to set a new state to the game.
     /// Example: Pause state, intermission, ...
-    ServerGameStateControl(ServerGameStateControl),
+    ServerGameStateControl(ServerGameState),
 }
 
 /// The types of GameStates which a server can request a client to enter.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum ServerGameStateControl {
+pub enum ServerGameState {
     /// Currently unused, may be used in the game to pause the match.
     Pause,
     /// Intermission state, in an intermission state clients can vote on the next map.
     Intermission(IntermissionData),
     /// Going game, this is sent if there is a game available to join immediately
-    OngoingGame,
+    OngoingGame(MapInstance),
 }
 
 /// The types of messages a client can sent to control the server.
@@ -75,10 +75,10 @@ pub enum ClientRequest {
 }
 
 /// The message the server sends to all the clients, to share all the important information about the current intermission. ie.: Maps available for voting, duration of the intermission.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct IntermissionData {
     pub selectable_maps: Vec<MapNameDiscriminants>,
-    pub intermission_duration_left: Duration,
+    pub intermission_duration_left: Timer,
 }
 
 /// This server as a way for the server to send the state of an entity in the world.

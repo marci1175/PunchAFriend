@@ -12,11 +12,10 @@ use bevy::{
 };
 use bevy_rapier2d::prelude::{CollisionGroups, Group, Velocity};
 
-use crate::{Direction, MapElement};
+use crate::Direction;
 
 use super::{
-    combat::{AttackObject, AttackType, Combo},
-    pawns::Player,
+    combat::{AttackObject, AttackType, Combo}, map::MapElement, pawns::Player
 };
 
 #[repr(u32)]
