@@ -51,7 +51,7 @@ pub struct ServerInstance {
 
     pub server_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
 
-    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
+    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<TcpStream>>)>>,
 
     pub game_state: Arc<RwLock<ServerGameState>>,
 }
@@ -78,7 +78,7 @@ impl ServerInstance {
             metadata: EndpointMetadata::new(udp_socket_port),
             connected_client_game_sockets: Arc::new(DashMap::new()),
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
-                MapInstance::original_map(),
+                MapInstance::map_flatground(),
             ))),
         })
     }
@@ -101,6 +101,7 @@ pub fn setup_remote_client_handler(
     let udp_socket = server_instance.udp_socket.clone();
 
     let metadata = server_instance.metadata;
+
     let connected_clients_clone = client_game_socket_list.clone();
 
     let server_game_state = server_instance.game_state.clone();
@@ -124,7 +125,7 @@ pub fn setup_remote_client_handler(
                     // Exchange metadata between client and server
                     if let Ok(client_metadata) = exchange_metadata(&mut tcp_stream, metadata.into_server_metadata(uuid)).await {
                         // Send the server's game state
-                        send_game_state(&mut tcp_stream, server_game_state.clone()).await;
+                        let _ = send_request_to_client(&mut tcp_stream, RemoteServerRequest { request: ServerRequest::ServerGameStateControl(server_game_state.read().clone()) }).await;
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -147,7 +148,7 @@ pub fn setup_remote_client_handler(
                         }).await;
 
                         // Save the connected clients handle and ports
-                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, tcp_stream));
+                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, Arc::new(Mutex::new(tcp_stream))));
                         
                         // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
                         sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
@@ -170,7 +171,7 @@ fn setup_client_listener(
     socket: Arc<UdpSocket>,
     cancellation_token: CancellationToken,
     client_request_channel: Sender<(RemoteClientGameRequest, SocketAddr)>,
-    connected_clients: Arc<DashMap<SocketAddr, (Uuid, TcpStream)>>,
+    connected_clients: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<TcpStream>>)>>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -247,14 +248,10 @@ pub async fn notify_client_about_player_disconnect(
     Ok(())
 }
 
-pub async fn send_game_state(
+pub async fn send_request_to_client(
     tcp_stream: &mut TcpStream,
-    server_game_state: Arc<RwLock<ServerGameState>>,
+    message: RemoteServerRequest,
 ) -> anyhow::Result<()> {
-    let message = RemoteServerRequest {
-        request: ServerRequest::ServerGameStateControl(server_game_state.read().clone()),
-    };
-
     write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;
 
     Ok(())

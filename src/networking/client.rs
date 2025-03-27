@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
 use tokio::{
-    io::AsyncReadExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket},
     select,
     sync::mpsc::{channel, Receiver, Sender},
@@ -12,7 +12,10 @@ use uuid::Uuid;
 
 use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
-use super::{write_to_buf_with_len, EndpointMetadata, RemoteServerRequest, ServerMetadata};
+use super::{
+    write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, RemoteServerRequest,
+    ServerMetadata,
+};
 
 #[derive(Resource)]
 pub struct ClientConnection {
@@ -24,7 +27,7 @@ pub struct ClientConnection {
 
     pub remote_receiver: Receiver<RemoteServerRequest>,
 
-    pub last_tick: u64,
+    pub remote_server_sender: Sender<RemoteClientRequest>,
 }
 
 impl ClientConnection {
@@ -54,8 +57,16 @@ impl ClientConnection {
         // Create a new channel pair for managing server main instructions
         let (remote_sender, remote_receiver) = channel::<RemoteServerRequest>(2000);
 
-        setup_server_instruction_listener(tcp_stream, cancellation_token.clone(), remote_sender)
-            .await;
+        // Create a new channel pair for sending messages to the remote server
+        let (remote_server_sender, remote_server_receiver) = channel::<RemoteClientRequest>(2000);
+
+        setup_server_handler(
+            tcp_stream,
+            cancellation_token.clone(),
+            remote_sender,
+            remote_server_receiver,
+        )
+        .await;
 
         // Connect to the destination address
         udp_socket
@@ -85,7 +96,7 @@ impl ClientConnection {
             server_input_sender: sender,
             server_tick_receiver: client_receiver,
             remote_receiver,
-            last_tick: 0,
+            remote_server_sender,
         })
     }
 }
@@ -145,16 +156,26 @@ pub async fn setup_server_game_listener(
     });
 }
 
-async fn setup_server_instruction_listener(
+async fn setup_server_handler(
     mut tcp_stream: TcpStream,
     cancellation_token: CancellationToken,
-    remote_sender: Sender<RemoteServerRequest>,
+    remote_server_sender: Sender<RemoteServerRequest>,
+    mut remote_client_receiver: Receiver<RemoteClientRequest>,
 ) {
     tokio::spawn(async move {
         loop {
             select! {
                 _ = cancellation_token.cancelled() => {
                     break;
+                }
+
+                // Try to receive a sendable message
+                Some(sendable_message) = remote_client_receiver.recv() => {
+                    // Serialize the message
+                    let buf = rmp_serde::to_vec(&sendable_message).unwrap();
+
+                    // Write the received message to the TcpStream for the server to receive it.
+                    write_to_buf_with_len(&mut tcp_stream, &buf).await;
                 }
 
                 Ok(message_length) = tcp_stream.read_u32() => {
@@ -164,7 +185,7 @@ async fn setup_server_instruction_listener(
 
                     let request = rmp_serde::from_slice::<RemoteServerRequest>(&buf).unwrap();
 
-                    remote_sender.send(request).await.unwrap();
+                    remote_server_sender.send(request).await.unwrap();
                 }
             }
         }

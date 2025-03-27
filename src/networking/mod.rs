@@ -71,7 +71,7 @@ pub enum ServerGameState {
 pub enum ClientRequest {
     /// This message is sent if the game is currently in an intermission state, where players can vote on the next map.
     /// The inner value contain the name of the map the clients wants to vote on.
-    Vote(String),
+    Vote(MapNameDiscriminants),
 }
 
 /// The message the server sends to all the clients, to share all the important information about the current intermission. ie.: Maps available for voting, duration of the intermission.
@@ -79,6 +79,18 @@ pub enum ClientRequest {
 pub struct IntermissionData {
     pub selectable_maps: Vec<MapNameDiscriminants>,
     pub intermission_duration_left: Timer,
+}
+
+impl IntermissionData {
+    pub fn new(
+        selectable_maps: Vec<MapNameDiscriminants>,
+        intermission_duration_left: Timer,
+    ) -> Self {
+        Self {
+            selectable_maps,
+            intermission_duration_left,
+        }
+    }
 }
 
 /// This server as a way for the server to send the state of an entity in the world.

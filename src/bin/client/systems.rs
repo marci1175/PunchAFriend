@@ -27,7 +27,11 @@ use egui_toast::{Toast, ToastOptions};
 use miniz_oxide::deflate::CompressionLevel;
 use punchafriend::{
     client::ApplicationCtx,
-    game::{collision::CollisionGroupSet, map::{MapElement, MapInstance}, pawns::Player},
+    game::{
+        collision::CollisionGroupSet,
+        map::{setup_map_from_mapinstance, MapElement, MapInstance},
+        pawns::Player,
+    },
     networking::GameInput,
     PauseWindowState, UiLayer,
 };
@@ -188,12 +192,19 @@ pub fn handle_server_output(
                         unimplemented!()
                     }
                     punchafriend::networking::ServerGameState::Intermission(intermission_data) => {
+                        // Set the application's state
                         app_ctx.ui_layer = UiLayer::Intermission(intermission_data);
                     }
                     punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
                         // Setup map for client-side from a mapinstance
-                        setup_map_from_mapinstance(map_instance, commands, collision_groups, game_objects);
+                        setup_map_from_mapinstance(
+                            map_instance,
+                            commands,
+                            collision_groups.clone(),
+                            game_objects,
+                        );
 
+                        // Set the application's state
                         app_ctx.ui_layer = UiLayer::Game;
                     }
                 },
@@ -230,31 +241,6 @@ pub fn handle_server_output(
                 }
             }
         }
-    }
-}
-
-pub fn setup_map_from_mapinstance(
-    map_instance: MapInstance,
-    mut commands: Commands,
-    collision_groups: Res<CollisionGroupSet>,
-    game_objects: Query<(Entity, &MapElement)>,
-    // meshes: ResMut<Assets<Mesh>>,
-    // materials: ResMut<Assets<ColorMaterial>>,
-    // mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-) {
-    // Delete all currently existing map objects.
-    for (entity, game_object) in &game_objects {
-        commands.entity(entity).despawn();
-    }
-
-    for object in map_instance.objects {
-        commands
-        .spawn(Collider::cuboid(object.size.x, object.size.y))
-        .insert(Transform::from_xyz(object.position.x, object.position.y, 0.))
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(collision_groups.map_object)
-        // .insert(Sprite {})
-        .insert(MapElement);
     }
 }
 

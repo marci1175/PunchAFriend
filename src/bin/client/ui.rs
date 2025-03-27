@@ -11,7 +11,7 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_egui::{
-    egui::{self, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
+    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
     EguiContexts,
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
@@ -20,7 +20,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Player},
-    networking::client::ClientConnection,
+    networking::{client::ClientConnection, RemoteClientRequest},
     PauseWindowState, UiLayer,
 };
 
@@ -42,9 +42,13 @@ pub fn ui_system(
     // Get context
     let ctx = context.ctx_mut();
 
+    // Install all image loaders
+    egui_extras::install_image_loaders(ctx);
+
     // Show toasts
     app_ctx.egui_toasts.show(ctx);
-
+    
+    // Match the UiLayer enum's state
     match app_ctx.ui_layer.clone() {
         UiLayer::Game => {}
         UiLayer::Intermission(mut intermission_data) => {
@@ -54,7 +58,7 @@ pub fn ui_system(
                 .tick(time.delta());
 
             egui::CentralPanel::default().show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
+                ui.vertical_centered(|ui| {
                     ui.label(RichText::from("Vote for the next map!").size(20.).strong());
 
                     ui.label(format!(
@@ -67,15 +71,41 @@ pub fn ui_system(
                 });
 
                 Grid::new("map_grid").show(ui, |ui| {
+                    // Iter over all the available maps
                     for map in &intermission_data.selectable_maps {
-                        // Show the button to vote
-                        if ui.button(map.to_string()).clicked() {};
+                        // Display the group
+                        ui.group(|ui| {
+                            // Allocate ui
+                            ui.allocate_ui(vec2(100., 100.), |ui| {
+                                ui.vertical_centered(|ui| {
+                                    // Display the map's name
+                                    ui.label(RichText::from(map.to_string()).strong());
 
-                        // Display an image of the map
-                        // ui.image(source)
+                                    // Display an image of the map
+                                    ui.image(egui::include_image!(
+                                        "../../../assets/map_imgs/test.png"
+                                    ));
+
+                                    // Show the button to vote
+                                    if ui.button("Vote").clicked() {
+                                        if let Some(client_connection) = &app_ctx.client_connection {
+                                            client_connection.remote_server_sender.try_send(RemoteClientRequest {
+                                                id: client_connection.server_metadata.client_uuid.clone(),
+                                                request: punchafriend::networking::ClientRequest::Vote(*map),
+                                            }).unwrap();
+                                        }
+                                    };
+                                });
+                            });
+                        });
+
+                        ui.end_row();
                     }
                 });
             });
+
+            // Set the innter value of the ui_layer
+            app_ctx.ui_layer = UiLayer::Intermission(intermission_data);
         }
         UiLayer::MainMenu => {
             // Display main title.

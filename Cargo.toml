@@ -33,3 +33,4 @@ console-subscriber = "0.4.1"
 miniz_oxide = "0.8.5"
 image = "0.25.5"
 heck = "0.5.0"
+egui_extras = {version = "0.30.0", features = ["all_loaders"]}

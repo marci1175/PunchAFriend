@@ -15,7 +15,9 @@ use bevy_rapier2d::prelude::{CollisionGroups, Group, Velocity};
 use crate::Direction;
 
 use super::{
-    combat::{AttackObject, AttackType, Combo}, map::MapElement, pawns::Player
+    combat::{AttackObject, AttackType, Combo},
+    map::MapElement,
+    pawns::Player,
 };
 
 #[repr(u32)]
@@ -151,7 +153,7 @@ pub fn check_for_collision_with_attack_object(
                 ) = (attack_obj_query_result, foreign_character_query_result)
                 {
                     // We should not apply any forces if the attack hit the player who has spawned the original attack.
-                    if dbg!(attack_object.attack_by) == dbg!(foreign_entity) {
+                    if attack_object.attack_by == foreign_entity {
                         continue;
                     }
 

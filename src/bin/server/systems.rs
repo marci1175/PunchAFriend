@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bevy::{
     asset::Assets,
     core_pipeline::core_2d::Camera2d,
@@ -15,33 +17,20 @@ use bevy::{
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
-use bevy_rapier2d::prelude::{ActiveEvents, Collider, KinematicCharacterController, Velocity};
+use bevy_rapier2d::prelude::{KinematicCharacterController, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
+use parking_lot::Mutex;
 use punchafriend::{
     game::{
-        collision::{check_for_collision_with_map_and_player, CollisionGroupSet}, map::MapElement, pawns::{handle_game_input, Player}
+        collision::{check_for_collision_with_map_and_player, CollisionGroupSet},
+        map::MapElement,
+        pawns::{handle_game_input, Player},
     },
-    networking::{server::notify_client_about_player_disconnect, GameInput, ServerTickUpdate},
+    networking::{server::{notify_client_about_player_disconnect, send_request_to_client}, GameInput, RemoteClientRequest, RemoteServerRequest, ServerTickUpdate},
     server::ApplicationCtx,
     RandomEngine,
 };
-
-pub fn setup_game(
-    mut commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<ColorMaterial>>,
-    collision_groups: &CollisionGroupSet,
-) {
-    // Setup graphics
-    commands.spawn(Camera2d);
-
-    commands
-        .spawn(Collider::cuboid(500.0, 10.0))
-        .insert(Transform::from_xyz(0.0, -200.0, 0.0))
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(collision_groups.map_object)
-        .insert(MapElement);
-}
+use tokio::{io::AsyncReadExt, net::tcp};
 
 pub fn recv_tick(
     mut commands: Commands,
@@ -64,6 +53,47 @@ pub fn recv_tick(
     // Set the global tick count
     app_ctx.tick_count = current_tick_count;
 
+    let mut connected_clients_list = app_ctx.server_instance.as_ref().map(|inner| inner.connected_client_game_sockets.clone());
+
+    // If there is any existing intermission timer increment it
+    if let Some(timer) = &mut app_ctx.intermission_timer {
+        timer.tick(time.delta());
+
+        if let Some(connected_clients) = &mut connected_clients_list {
+            for connected_client in connected_clients.iter_mut() {
+                let (_, tcp_stream_lock) = connected_client.value();
+
+                let mut message_length_buf = vec![0; 4];
+
+                let tcp_stream = tcp_stream_lock.lock();
+                let tcp_stream_lock_clone = tcp_stream_lock.clone();
+
+                if let Ok(_read_bytes) = tcp_stream.try_read(&mut message_length_buf) {
+                    let message_length = u32::from_be_bytes(message_length_buf.try_into().unwrap());
+                    
+                    runtime.spawn_background_task(move |_task| async move {
+                        let mut buf = vec![0; message_length as usize];
+
+                        tcp_stream_lock_clone.lock().read_exact(&mut buf).await.unwrap();
+
+                        let client_request = rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
+
+                        match client_request.request {
+                            punchafriend::networking::ClientRequest::Vote(map_name_discriminants) => todo!(),
+                        }
+                    });
+                }
+            }
+        }        
+
+        // If the countdown has ended notify all the client
+        if timer.finished() {
+
+            // send_request_to_client(tcp_stream, RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(()))})
+        }
+    }
+
+    // Handle an existing connection
     if let Some(server_instance) = &mut app_ctx.server_instance {
         if let Some(remote_receiver) = &mut server_instance.server_receiver {
             // Clone the connected clients list's handle
@@ -106,18 +136,11 @@ pub fn recv_tick(
                                 connected_clients_clone.remove(&address).unwrap().1 .0;
 
                             // Spawn an async task to broadcast the disconnection message to the clients
-                            runtime.spawn_background_task(move |_ctx| async move {
-                                // Get the connected clients list
-                                for mut connected_client in connected_clients_clone.iter_mut() {
-                                    // Get the handle of the TcpStream established when the client was connecting to the server
-                                    let (_, tcp_stream) = connected_client.value_mut();
-
-                                    // Send the disconnection message on the TcpStream specified
-                                    notify_client_about_player_disconnect(tcp_stream, removed_uuid)
-                                        .await
-                                        .unwrap();
-                                }
-                            });
+                            notify_players_player_disconnect(
+                                &runtime,
+                                connected_clients_clone,
+                                removed_uuid,
+                            );
 
                             // If we have found the client this message belonged to we can break out of the loop
                             break 'query_loop;
@@ -127,6 +150,27 @@ pub fn recv_tick(
             }
         }
     }
+}
+
+fn notify_players_player_disconnect(
+    runtime: &Res<'_, TokioTasksRuntime>,
+    connected_clients_clone: std::sync::Arc<
+        dashmap::DashMap<std::net::SocketAddr, (uuid::Uuid, Arc<Mutex<tokio::net::TcpStream>>)>,
+    >,
+    removed_uuid: uuid::Uuid,
+) {
+    runtime.spawn_background_task(move |_ctx| async move {
+        // Get the connected clients list
+        for connected_client in connected_clients_clone.iter_mut() {
+            // Get the handle of the TcpStream established when the client was connecting to the server
+            let (_, tcp_stream) = connected_client.value();
+
+            // Send the disconnection message on the TcpStream specified
+            notify_client_about_player_disconnect(&mut *tcp_stream.lock(), removed_uuid)
+                .await
+                .unwrap();
+        }
+    });
 }
 
 pub fn send_tick(
@@ -213,12 +257,14 @@ pub fn reset_jump_remaining_for_player(
 pub fn setup_window(
     mut winit_settings: ResMut<WinitSettings>,
     mut framerate: ResMut<FramepaceSettings>,
-    commands: Commands,
+    mut commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
 ) {
     winit_settings.unfocused_mode = UpdateMode::Continuous;
+    
+    commands.spawn(Camera2d);
 
     framerate.limiter = Limiter::from_framerate(120.);
 }

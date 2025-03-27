@@ -1,9 +1,14 @@
+use std::{net::SocketAddr, time::Duration};
+
 use bevy::{
     asset::Assets,
-    ecs::system::{Commands, Res, ResMut},
+    ecs::{
+        entity::Entity,
+        system::{Commands, Query, Res, ResMut},
+    },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::Time,
+    time::{Time, Timer},
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
@@ -11,14 +16,21 @@ use bevy_egui::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
-    game::collision::CollisionGroupSet,
-    networking::server::{setup_remote_client_handler, ServerInstance},
+    game::{
+        collision::CollisionGroupSet,
+        map::{setup_map_from_mapinstance, MapElement, MapNameDiscriminants},
+    },
+    networking::{
+        server::{
+            send_request_to_client,
+            setup_remote_client_handler, ServerInstance,
+        }, IntermissionData, RemoteServerRequest, ServerGameState
+    },
     server::ApplicationCtx,
     UiLayer,
 };
+use strum::VariantArray;
 use tokio::sync::mpsc::channel;
-
-use crate::systems::setup_game;
 
 pub fn ui_system(
     mut contexts: EguiContexts,
@@ -27,23 +39,66 @@ pub fn ui_system(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
-    // mut local_player: Query<&mut LocalPlayer>,
+    current_map_objects: Query<(Entity, &MapElement)>,
     runtime: ResMut<TokioTasksRuntime>,
-    time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
 
     match app_ctx.ui_mode {
         // If there is a game currently playing we should display the HUD.
         punchafriend::UiLayer::Game => {
-            egui::Area::new("server_info".into())
-                .anchor(Align2::LEFT_TOP, egui::vec2(50., 50.))
-                .default_size(egui::vec2(100., 100.))
-                .show(ctx, |ui| {
-                    if let Some(inst) = &app_ctx.server_instance {
-                        ui.label(format!("Port: {}", inst.tcp_listener_port));
+            egui::SidePanel::left("server_panel").show(ctx, |ui| {
+                if let Some(inst) = &app_ctx.server_instance {
+                    ui.label(format!("Port: {}", inst.tcp_listener_port));
+
+                    if ui.button("Set intermission state").clicked() {
+                        let dash_map = inst.connected_client_game_sockets.clone();
+
+                        let intermission_data = IntermissionData::new(
+                            MapNameDiscriminants::VARIANTS.to_vec(),
+                            Timer::new(
+                                Duration::from_secs(30),
+                                bevy::time::TimerMode::Once,
+                            ),
+                        );
+
+                        if let Some(server_instance) = &app_ctx.server_instance {
+                            *server_instance.game_state.write() = ServerGameState::Intermission(intermission_data.clone());
+                        }
+
+                        runtime.spawn_background_task(move |_ctx| async move {
+                            // These are the sockets which returned an error when reading from them
+                            let mut erroring_socket_addresses: Vec<SocketAddr> = vec![];
+
+                            // Get the connected clients list
+                            for connected_client in dash_map.iter_mut() {
+                                // Get the handle of the TcpStream established when the client was connecting to the server
+                                let (_, tcp_stream) = connected_client.value();
+
+                                // Send the disconnection message on the TcpStream specified
+                                if let Err(err) = send_request_to_client(
+                                    &mut *tcp_stream.lock(),
+                                    RemoteServerRequest {
+                                        request: punchafriend::networking::ServerRequest::ServerGameStateControl(ServerGameState::Intermission(
+                                            intermission_data.clone()
+                                        ))
+                                    },
+                                )
+                                .await
+                                {
+                                    dbg!(err);
+
+                                    erroring_socket_addresses.push(*connected_client.key());
+                                };
+                            }
+
+                            for erroring_socket in &erroring_socket_addresses {
+                                dash_map.remove(erroring_socket);
+                            }
+                        });
                     }
-                });
+                }
+            });
         }
         // Display main menu window.
         punchafriend::UiLayer::MainMenu => {
@@ -118,7 +173,7 @@ pub fn ui_system(
         }
         punchafriend::UiLayer::GameMenu => {}
         punchafriend::UiLayer::Intermission(_) => {
-            unimplemented!();
+            // unimplemented!();
         }
     }
 
@@ -130,7 +185,26 @@ pub fn ui_system(
         match server_instance {
             Ok(mut server_instance) => {
                 // Initalize game
-                setup_game(commands, meshes, materials, &collision_groups);
+                let game_state = server_instance.game_state.read();
+
+                match game_state.clone() {
+                    punchafriend::networking::ServerGameState::Pause => {
+                        unimplemented!("The server should never reach this point.");
+                    }
+                    punchafriend::networking::ServerGameState::Intermission(_) => {
+                        unimplemented!("The server should never reach this point.");
+                    }
+                    punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
+                        setup_map_from_mapinstance(
+                            map_instance,
+                            commands,
+                            collision_groups.clone(),
+                            current_map_objects,
+                        );
+                    }
+                }
+
+                drop(game_state);
 
                 // Initalize server threads
                 setup_remote_client_handler(

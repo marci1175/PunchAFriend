@@ -34,7 +34,7 @@ pub enum PauseWindowState {
 pub mod server {
     use std::sync::Arc;
 
-    use bevy::ecs::system::Resource;
+    use bevy::{ecs::system::Resource, time::Timer};
     use parking_lot::RwLock;
 
     use rand::{rngs::SmallRng, SeedableRng};
@@ -69,6 +69,8 @@ pub mod server {
         pub client_list: Arc<RwLock<Vec<RemoteGameClient>>>,
 
         pub tick_count: u64,
+
+        pub intermission_timer: Option<Timer>,
     }
 
     impl Default for ApplicationCtx {
@@ -82,6 +84,7 @@ pub mod server {
                 cancellation_token: CancellationToken::new(),
                 client_list: Arc::new(RwLock::new(vec![])),
                 tick_count: 0,
+                intermission_timer: None,
             }
         }
     }
