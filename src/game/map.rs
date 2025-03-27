@@ -2,7 +2,7 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
-        system::{Commands, Query, Res},
+        system::{Commands, Query},
     },
     math::{vec2, Vec2},
     transform::components::Transform,

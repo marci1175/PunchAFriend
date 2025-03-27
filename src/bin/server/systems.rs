@@ -26,11 +26,14 @@ use punchafriend::{
         map::MapElement,
         pawns::{handle_game_input, Player},
     },
-    networking::{server::{notify_client_about_player_disconnect, send_request_to_client}, GameInput, RemoteClientRequest, RemoteServerRequest, ServerTickUpdate},
+    networking::{
+        server::notify_client_about_player_disconnect,
+        GameInput, RemoteClientRequest, ServerTickUpdate,
+    },
     server::ApplicationCtx,
     RandomEngine,
 };
-use tokio::{io::AsyncReadExt, net::tcp};
+use tokio::io::AsyncReadExt;
 
 pub fn recv_tick(
     mut commands: Commands,
@@ -53,7 +56,10 @@ pub fn recv_tick(
     // Set the global tick count
     app_ctx.tick_count = current_tick_count;
 
-    let mut connected_clients_list = app_ctx.server_instance.as_ref().map(|inner| inner.connected_client_game_sockets.clone());
+    let mut connected_clients_list = app_ctx
+        .server_instance
+        .as_ref()
+        .map(|inner| inner.connected_client_game_sockets.clone());
 
     // If there is any existing intermission timer increment it
     if let Some(timer) = &mut app_ctx.intermission_timer {
@@ -70,21 +76,28 @@ pub fn recv_tick(
 
                 if let Ok(_read_bytes) = tcp_stream.try_read(&mut message_length_buf) {
                     let message_length = u32::from_be_bytes(message_length_buf.try_into().unwrap());
-                    
+
                     runtime.spawn_background_task(move |_task| async move {
                         let mut buf = vec![0; message_length as usize];
 
-                        tcp_stream_lock_clone.lock().read_exact(&mut buf).await.unwrap();
+                        tcp_stream_lock_clone
+                            .lock()
+                            .read_exact(&mut buf)
+                            .await
+                            .unwrap();
 
-                        let client_request = rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
+                        let client_request =
+                            rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
 
                         match client_request.request {
-                            punchafriend::networking::ClientRequest::Vote(map_name_discriminants) => todo!(),
+                            punchafriend::networking::ClientRequest::Vote(
+                                map_name_discriminants,
+                            ) => todo!(),
                         }
                     });
                 }
             }
-        }        
+        }
 
         // If the countdown has ended notify all the client
         if timer.finished() {
@@ -166,7 +179,7 @@ fn notify_players_player_disconnect(
             let (_, tcp_stream) = connected_client.value();
 
             // Send the disconnection message on the TcpStream specified
-            notify_client_about_player_disconnect(&mut *tcp_stream.lock(), removed_uuid)
+            notify_client_about_player_disconnect(&mut tcp_stream.lock(), removed_uuid)
                 .await
                 .unwrap();
         }
@@ -263,7 +276,7 @@ pub fn setup_window(
     collision_groups: Res<CollisionGroupSet>,
 ) {
     winit_settings.unfocused_mode = UpdateMode::Continuous;
-    
+
     commands.spawn(Camera2d);
 
     framerate.limiter = Limiter::from_framerate(120.);

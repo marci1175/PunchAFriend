@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncReadExt,
     net::{TcpStream, UdpSocket},
     select,
     sync::mpsc::{channel, Receiver, Sender},

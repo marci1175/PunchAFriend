@@ -1,4 +1,3 @@
-use std::time::Duration;
 
 use bevy::{time::Timer, transform::components::Transform};
 use bevy_rapier2d::prelude::Velocity;

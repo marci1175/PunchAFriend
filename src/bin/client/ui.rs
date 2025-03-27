@@ -47,7 +47,7 @@ pub fn ui_system(
 
     // Show toasts
     app_ctx.egui_toasts.show(ctx);
-    
+
     // Match the UiLayer enum's state
     match app_ctx.ui_layer.clone() {
         UiLayer::Game => {}
@@ -90,7 +90,7 @@ pub fn ui_system(
                                     if ui.button("Vote").clicked() {
                                         if let Some(client_connection) = &app_ctx.client_connection {
                                             client_connection.remote_server_sender.try_send(RemoteClientRequest {
-                                                id: client_connection.server_metadata.client_uuid.clone(),
+                                                id: client_connection.server_metadata.client_uuid,
                                                 request: punchafriend::networking::ClientRequest::Vote(*map),
                                             }).unwrap();
                                         }

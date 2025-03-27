@@ -29,7 +29,7 @@ use punchafriend::{
     client::ApplicationCtx,
     game::{
         collision::CollisionGroupSet,
-        map::{setup_map_from_mapinstance, MapElement, MapInstance},
+        map::{setup_map_from_mapinstance, MapElement},
         pawns::Player,
     },
     networking::GameInput,

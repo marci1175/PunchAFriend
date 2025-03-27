@@ -8,7 +8,7 @@ use bevy::{
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::{Time, Timer},
+    time::Timer,
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
@@ -21,10 +21,8 @@ use punchafriend::{
         map::{setup_map_from_mapinstance, MapElement, MapNameDiscriminants},
     },
     networking::{
-        server::{
-            send_request_to_client,
-            setup_remote_client_handler, ServerInstance,
-        }, IntermissionData, RemoteServerRequest, ServerGameState
+        server::{send_request_to_client, setup_remote_client_handler, ServerInstance},
+        IntermissionData, RemoteServerRequest, ServerGameState,
     },
     server::ApplicationCtx,
     UiLayer,
@@ -77,7 +75,7 @@ pub fn ui_system(
 
                                 // Send the disconnection message on the TcpStream specified
                                 if let Err(err) = send_request_to_client(
-                                    &mut *tcp_stream.lock(),
+                                    &mut tcp_stream.lock(),
                                     RemoteServerRequest {
                                         request: punchafriend::networking::ServerRequest::ServerGameStateControl(ServerGameState::Intermission(
                                             intermission_data.clone()

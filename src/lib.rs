@@ -1,7 +1,7 @@
 pub mod game;
 pub mod networking;
 
-use bevy::ecs::{component::Component, system::Resource};
+use bevy::ecs::system::Resource;
 use networking::IntermissionData;
 use rand::{rngs::SmallRng, SeedableRng};
 
