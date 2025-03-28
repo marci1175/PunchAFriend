@@ -72,7 +72,7 @@ pub fn ui_system(
 
                 Grid::new("map_grid").show(ui, |ui| {
                     // Iter over all the available maps
-                    for map in &intermission_data.selectable_maps {
+                    for (map, vote_count) in &intermission_data.selectable_maps {
                         // Display the group
                         ui.group(|ui| {
                             // Allocate ui

@@ -18,7 +18,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
-        map::{setup_map_from_mapinstance, MapElement, MapNameDiscriminants},
+        map::{setup_map_from_mapinstance, MapElement, MapName, MapNameDiscriminants},
     },
     networking::{
         server::{send_request_to_client, setup_remote_client_handler, ServerInstance},
@@ -53,7 +53,7 @@ pub fn ui_system(
                         let dash_map = inst.connected_client_game_sockets.clone();
 
                         let intermission_data = IntermissionData::new(
-                            MapNameDiscriminants::VARIANTS.to_vec(),
+                            MapNameDiscriminants::VARIANTS.to_vec().iter().map(|map| (*map, 0)).collect::<Vec<(MapNameDiscriminants, usize)>>(),
                             Timer::new(
                                 Duration::from_secs(30),
                                 bevy::time::TimerMode::Once,

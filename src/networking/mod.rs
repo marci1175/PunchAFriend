@@ -76,13 +76,13 @@ pub enum ClientRequest {
 /// The message the server sends to all the clients, to share all the important information about the current intermission. ie.: Maps available for voting, duration of the intermission.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct IntermissionData {
-    pub selectable_maps: Vec<MapNameDiscriminants>,
+    pub selectable_maps: Vec<(MapNameDiscriminants, usize)>,
     pub intermission_duration_left: Timer,
 }
 
 impl IntermissionData {
     pub fn new(
-        selectable_maps: Vec<MapNameDiscriminants>,
+        selectable_maps: Vec<(MapNameDiscriminants, usize)>,
         intermission_duration_left: Timer,
     ) -> Self {
         Self {

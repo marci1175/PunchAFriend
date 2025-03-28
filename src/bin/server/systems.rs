@@ -19,6 +19,7 @@ use bevy::{
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{KinematicCharacterController, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
+use futures::{FutureExt, TryFutureExt};
 use parking_lot::Mutex;
 use punchafriend::{
     game::{
@@ -56,59 +57,42 @@ pub fn recv_tick(
     // Set the global tick count
     app_ctx.tick_count = current_tick_count;
 
-    let mut connected_clients_list = app_ctx
-        .server_instance
-        .as_ref()
-        .map(|inner| inner.connected_client_game_sockets.clone());
-
     // If there is any existing intermission timer increment it
     if let Some(timer) = &mut app_ctx.intermission_timer {
         timer.tick(time.delta());
 
-        if let Some(connected_clients) = &mut connected_clients_list {
-            for connected_client in connected_clients.iter_mut() {
-                let (_, tcp_stream_lock) = connected_client.value();
+        // If the countdown has ended notify all the client
+        if timer.finished() {
+            
+            // send_request_to_client(tcp_stream, RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(()))})
+        }
 
-                let mut message_length_buf = vec![0; 4];
-
-                let tcp_stream = tcp_stream_lock.lock();
-                let tcp_stream_lock_clone = tcp_stream_lock.clone();
-
-                if let Ok(_read_bytes) = tcp_stream.try_read(&mut message_length_buf) {
-                    let message_length = u32::from_be_bytes(message_length_buf.try_into().unwrap());
-
-                    runtime.spawn_background_task(move |_task| async move {
-                        let mut buf = vec![0; message_length as usize];
-
-                        tcp_stream_lock_clone
-                            .lock()
-                            .read_exact(&mut buf)
-                            .await
-                            .unwrap();
-
-                        let client_request =
-                            rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
-
-                        match client_request.request {
-                            punchafriend::networking::ClientRequest::Vote(
-                                map_name_discriminants,
-                            ) => todo!(),
-                        }
-                    });
+        if let Some(server_instance) = &mut app_ctx.server_instance {
+            if let Some(tcp_receiver) = &mut server_instance.client_tcp_receiver {
+                if let Ok(message) = tcp_receiver.try_recv() {
+                    match message.request {
+                        punchafriend::networking::ClientRequest::Vote(voted_map_name_discriminant) => {
+                            match &mut *server_instance.game_state.clone().write() {
+                                punchafriend::networking::ServerGameState::Pause => {},
+                                punchafriend::networking::ServerGameState::Intermission(server_intermission_data) => {
+                                    if let Some(idx) = server_intermission_data.selectable_maps.iter().position(|(map, _)| *map == voted_map_name_discriminant) {
+                                        server_intermission_data.selectable_maps[idx].1 += 1;
+                                    }
+                                },
+                                punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {},
+                            }
+                        },
+                    }
                 }
             }
         }
 
-        // If the countdown has ended notify all the client
-        if timer.finished() {
-
-            // send_request_to_client(tcp_stream, RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(()))})
-        }
+        
     }
 
     // Handle an existing connection
     if let Some(server_instance) = &mut app_ctx.server_instance {
-        if let Some(remote_receiver) = &mut server_instance.server_receiver {
+        if let Some(remote_receiver) = &mut server_instance.client_udp_receiver {
             // Clone the connected clients list's handle
             let connected_clients_clone = server_instance.connected_client_game_sockets.clone();
 

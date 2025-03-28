@@ -7,6 +7,7 @@ use bevy_rapier2d::prelude::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use dashmap::DashMap;
+use futures::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
     io::AsyncReadExt,
@@ -19,7 +20,7 @@ use uuid::Uuid;
 
 use crate::{
     game::{collision::CollisionGroupSet, map::MapInstance, pawns::Player},
-    networking::{GameInput, UDP_DATAGRAM_SIZE},
+    networking::{GameInput, RemoteClientRequest, UDP_DATAGRAM_SIZE},
 };
 
 use super::{
@@ -49,9 +50,11 @@ pub struct ServerInstance {
     pub metadata: EndpointMetadata,
     pub tcp_listener_port: u16,
 
-    pub server_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
+    pub client_udp_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
 
     pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<TcpStream>>)>>,
+
+    pub client_tcp_receiver: Option<Receiver<RemoteClientRequest>>,
 
     pub game_state: Arc<RwLock<ServerGameState>>,
 }
@@ -74,9 +77,10 @@ impl ServerInstance {
             tcp_listener: Arc::new(Mutex::new(tcp_listener)),
             udp_socket: Arc::new(udp_socket),
             tcp_listener_port,
-            server_receiver: None,
+            client_udp_receiver: None,
             metadata: EndpointMetadata::new(udp_socket_port),
             connected_client_game_sockets: Arc::new(DashMap::new()),
+            client_tcp_receiver: None,
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
                 MapInstance::map_flatground(),
             ))),
@@ -95,6 +99,7 @@ pub fn setup_remote_client_handler(
     let client_game_socket_list = server_instance.connected_client_game_sockets.clone();
 
     let (sender, receiver) = channel::<(RemoteClientGameRequest, SocketAddr)>(2000);
+    let (tcp_sender, tcp_receiver) = channel::<RemoteClientRequest>(2000);
 
     let cancellation_token_clone = cancellation_token.clone();
 
@@ -106,7 +111,8 @@ pub fn setup_remote_client_handler(
 
     let server_game_state = server_instance.game_state.clone();
 
-    server_instance.server_receiver = Some(receiver);
+    server_instance.client_tcp_receiver = Some(tcp_receiver); 
+    server_instance.client_udp_receiver = Some(receiver);
 
     // Spawn the incoming connection accepter thread
     tokio_runtime.spawn_background_task(move |mut ctx| async move {
@@ -148,11 +154,36 @@ pub fn setup_remote_client_handler(
                         }).await;
 
                         // Save the connected clients handle and ports
-                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, Arc::new(Mutex::new(tcp_stream))));
+                        // connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, Arc::new(Mutex::new(tcp_stream))));
                         
                         // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
                         sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
                     }
+                    
+                    let cancellation_token_clone = cancellation_token_clone.clone();
+
+                    let tcp_sender = tcp_sender.clone();
+
+                    // Create tcp listener
+                    tokio::spawn(async move {
+                        loop {
+                            select! {
+                                _ = cancellation_token_clone.cancelled() => {
+                                    break;
+                                }
+
+                                Ok(message_length) = tcp_stream.read_u32() => {
+                                    let mut buf = vec![0; message_length as usize];
+
+                                    tcp_stream.read_exact(&mut buf).await.unwrap();
+
+                                    let message = rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
+
+                                    tcp_sender.send(message).await.unwrap();
+                                }
+                            }
+                        }
+                    });
                 }
             }
         }

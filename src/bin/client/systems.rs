@@ -189,7 +189,7 @@ pub fn handle_server_output(
                     game_state_control,
                 ) => match game_state_control {
                     punchafriend::networking::ServerGameState::Pause => {
-                        // unimplemented!()
+                        unimplemented!()
                     }
                     punchafriend::networking::ServerGameState::Intermission(intermission_data) => {
                         // Set the application's state
