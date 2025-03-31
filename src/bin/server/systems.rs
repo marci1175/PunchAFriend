@@ -76,11 +76,13 @@ pub fn recv_tick(
                                 punchafriend::networking::ServerGameState::Pause => {},
                                 punchafriend::networking::ServerGameState::Intermission(server_intermission_data) => {
                                     if let Some(idx) = server_intermission_data.selectable_maps.iter().position(|(map, _)| *map == voted_map_name_discriminant) {
-                                        
+
                                         server_intermission_data.selectable_maps[idx].1 += 1;
                                     }
                                 },
-                                punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {},
+                                punchafriend::networking::ServerGameState::OngoingGame(_map_instance) => {
+
+                                },
                             }
                         },
                     }
