@@ -29,7 +29,7 @@ use punchafriend::{
     client::ApplicationCtx,
     game::{
         collision::CollisionGroupSet,
-        map::{setup_map_from_mapinstance, MapElement},
+        map::{load_map_from_mapinstance, MapElement},
         pawns::Player,
     },
     networking::GameInput,
@@ -197,9 +197,9 @@ pub fn handle_server_output(
                     }
                     punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
                         // Setup map for client-side from a mapinstance
-                        setup_map_from_mapinstance(
+                        load_map_from_mapinstance(
                             map_instance,
-                            commands,
+                            &mut commands,
                             collision_groups.clone(),
                             game_objects,
                         );

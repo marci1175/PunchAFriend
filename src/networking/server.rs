@@ -11,7 +11,7 @@ use futures::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
     io::AsyncReadExt,
-    net::{TcpListener, TcpSocket, TcpStream, UdpSocket},
+    net::{tcp::{OwnedReadHalf, OwnedWriteHalf, WriteHalf}, TcpListener, TcpSocket, TcpStream, UdpSocket},
     select,
     sync::mpsc::{channel, Receiver, Sender},
 };
@@ -52,7 +52,7 @@ pub struct ServerInstance {
 
     pub client_udp_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
 
-    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<TcpStream>>)>>,
+    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
 
     pub client_tcp_receiver: Option<Receiver<RemoteClientRequest>>,
 
@@ -124,14 +124,16 @@ pub fn setup_remote_client_handler(
                     break;
                 },
 
-                Ok((mut tcp_stream, socket_addr)) = handle_incoming_request(tcp_listener.clone()) => {
+                Ok((tcp_stream, socket_addr)) = handle_incoming_request(tcp_listener.clone()) => {
                     // Create a new unique id for the connected client
                     let uuid = Uuid::new_v4();
 
+                    let (mut read_half, mut write_half) = tcp_stream.into_split();
+
                     // Exchange metadata between client and server
-                    if let Ok(client_metadata) = exchange_metadata(&mut tcp_stream, metadata.into_server_metadata(uuid)).await {
+                    if let Ok(client_metadata) = exchange_metadata(&mut read_half, &mut write_half, metadata.into_server_metadata(uuid)).await {
                         // Send the server's game state
-                        let _ = send_request_to_client(&mut tcp_stream, RemoteServerRequest { request: ServerRequest::ServerGameStateControl(server_game_state.read().clone()) }).await;
+                        let _ = send_request_to_client(&mut write_half, RemoteServerRequest { request: ServerRequest::ServerGameStateControl(server_game_state.read().clone()) }).await;
 
                         // Spawn a new entity for the connected client
                         ctx.run_on_main_thread(move |main_ctx| {
@@ -154,36 +156,38 @@ pub fn setup_remote_client_handler(
                         }).await;
 
                         // Save the connected clients handle and ports
-                        // connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, Arc::new(Mutex::new(tcp_stream))));
+                        connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, Arc::new(Mutex::new(write_half))));
                         
                         // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
                         sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
-                    }
-                    
-                    let cancellation_token_clone = cancellation_token_clone.clone();
+                        
+                        // Clone the cancellation token
+                        let cancellation_token_clone = cancellation_token_clone.clone();
 
-                    let tcp_sender = tcp_sender.clone();
+                        // Clone the TcpSender
+                        let tcp_sender = tcp_sender.clone();
 
-                    // Create tcp listener
-                    tokio::spawn(async move {
-                        loop {
-                            select! {
-                                _ = cancellation_token_clone.cancelled() => {
-                                    break;
-                                }
+                        // Create tcp listener
+                        tokio::spawn(async move {
+                            loop {
+                                select! {
+                                    _ = cancellation_token_clone.cancelled() => {
+                                        break;
+                                    }
 
-                                Ok(message_length) = tcp_stream.read_u32() => {
-                                    let mut buf = vec![0; message_length as usize];
+                                    Ok(message_length) = read_half.read_u32() => {
+                                        let mut buf = vec![0; message_length as usize];
 
-                                    tcp_stream.read_exact(&mut buf).await.unwrap();
+                                        read_half.read_exact(&mut buf).await.unwrap();
 
-                                    let message = rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
+                                        let message = rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
 
-                                    tcp_sender.send(message).await.unwrap();
+                                        tcp_sender.send(message).await.unwrap();
+                                    }
                                 }
                             }
-                        }
-                    });
+                        });
+                    }
                 }
             }
         }
@@ -202,7 +206,7 @@ fn setup_client_listener(
     socket: Arc<UdpSocket>,
     cancellation_token: CancellationToken,
     client_request_channel: Sender<(RemoteClientGameRequest, SocketAddr)>,
-    connected_clients: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<TcpStream>>)>>,
+    connected_clients: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -248,18 +252,19 @@ fn setup_client_listener(
 }
 
 async fn exchange_metadata(
-    tcp_stream: &mut TcpStream,
+    read_half: &mut OwnedReadHalf,
+    write_half: &mut OwnedWriteHalf,
     metadata: ServerMetadata,
 ) -> anyhow::Result<EndpointMetadata> {
     let slice = rmp_serde::to_vec(&metadata)?;
 
-    write_to_buf_with_len(tcp_stream, &slice).await?;
+    write_to_buf_with_len(write_half, &slice).await?;
 
-    let metadata_length = tcp_stream.read_u32().await?;
+    let metadata_length = read_half.read_u32().await?;
 
     let mut buf = vec![0; metadata_length as usize];
 
-    tcp_stream.read_exact(&mut buf).await?;
+    read_half.read_exact(&mut buf).await?;
 
     let client_metadata = rmp_serde::from_slice::<EndpointMetadata>(&buf)?;
 
@@ -267,20 +272,20 @@ async fn exchange_metadata(
 }
 
 pub async fn notify_client_about_player_disconnect(
-    tcp_stream: &mut TcpStream,
+    write_half: &mut OwnedWriteHalf,
     uuid: Uuid,
 ) -> anyhow::Result<()> {
     let message = RemoteServerRequest {
         request: ServerRequest::PlayerDisconnect(uuid),
     };
 
-    write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;
+    write_to_buf_with_len(write_half, &rmp_serde::to_vec(&message)?).await?;
 
     Ok(())
 }
 
 pub async fn send_request_to_client(
-    tcp_stream: &mut TcpStream,
+    tcp_stream: &mut OwnedWriteHalf,
     message: RemoteServerRequest,
 ) -> anyhow::Result<()> {
     write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;

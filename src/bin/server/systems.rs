@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use punchafriend::{game::map::load_map_from_mapinstance, networking::ServerGameState::Intermission};
 
 use bevy::{
     asset::Assets,
@@ -28,13 +29,12 @@ use punchafriend::{
         pawns::{handle_game_input, Player},
     },
     networking::{
-        server::notify_client_about_player_disconnect,
-        GameInput, RemoteClientRequest, ServerTickUpdate,
+        server::{notify_client_about_player_disconnect, send_request_to_client}, GameInput, RemoteServerRequest, ServerTickUpdate
     },
     server::ApplicationCtx,
     RandomEngine,
 };
-use tokio::io::AsyncReadExt;
+use tokio::net::tcp::OwnedWriteHalf;
 
 pub fn recv_tick(
     mut commands: Commands,
@@ -50,21 +50,53 @@ pub fn recv_tick(
     runtime: Res<TokioTasksRuntime>,
     collision_groups: Res<CollisionGroupSet>,
     time: Res<Time>,
+    current_game_objects: Query<(Entity, &MapElement)>,
 ) {
     // Increment global tick counter
     let current_tick_count = app_ctx.tick_count.wrapping_add(1);
 
     // Set the global tick count
     app_ctx.tick_count = current_tick_count;
-
+    
     // If there is any existing intermission timer increment it
     if let Some(timer) = &mut app_ctx.intermission_timer {
         timer.tick(time.delta());
+    }
 
-        // If the countdown has ended notify all the client
-        if timer.finished() {
+    // If there is any existing intermission timer get the immutable state of it
+    if let Some(timer) = app_ctx.intermission_timer.clone() {
+        if let Some(server_instance) = &app_ctx.server_instance {
+            // If the countdown has ended notify all the client
+            if timer.finished() {
+                let game_state = server_instance.game_state.read().clone();
             
-            // send_request_to_client(tcp_stream, RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(()))})
+                if let Intermission(intermission_data) = game_state {
+                    let most_voted_entry = intermission_data.selectable_maps.iter().max_by_key(|e| e.1);
+
+                    if let Some((voted_map_name, _vote_count)) = most_voted_entry {
+                        let connected_client_list = server_instance.connected_client_game_sockets.clone();
+                        
+                        let map_instance = voted_map_name.into_map_instance();
+                        
+                        let map_instance_clone = map_instance.clone();
+
+                        runtime.spawn_background_task(async move |_task| {
+                            // Iter over all the clients    
+                            for mut entry in connected_client_list.iter_mut() {
+                                let (_, write_half) = entry.value_mut();
+
+                                // Send the message to the client
+                                send_request_to_client(&mut *write_half.lock(), RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(map_instance.clone()))}).await.unwrap();
+                            }
+                        });
+
+                        load_map_from_mapinstance(map_instance_clone.clone(), &mut commands, collision_groups.clone(), current_game_objects);
+                    }
+                }
+                
+                // Reset the timer's state
+                app_ctx.intermission_timer = None;
+            }
         }
 
         if let Some(server_instance) = &mut app_ctx.server_instance {
@@ -73,15 +105,16 @@ pub fn recv_tick(
                     match message.request {
                         punchafriend::networking::ClientRequest::Vote(voted_map_name_discriminant) => {
                             match &mut *server_instance.game_state.clone().write() {
-                                punchafriend::networking::ServerGameState::Pause => {},
+                                punchafriend::networking::ServerGameState::Pause => {
+
+                                },
                                 punchafriend::networking::ServerGameState::Intermission(server_intermission_data) => {
                                     if let Some(idx) = server_intermission_data.selectable_maps.iter().position(|(map, _)| *map == voted_map_name_discriminant) {
-
                                         server_intermission_data.selectable_maps[idx].1 += 1;
                                     }
                                 },
                                 punchafriend::networking::ServerGameState::OngoingGame(_map_instance) => {
-
+                                    
                                 },
                             }
                         },
@@ -89,8 +122,6 @@ pub fn recv_tick(
                 }
             }
         }
-
-        
     }
 
     // Handle an existing connection
@@ -133,7 +164,7 @@ pub fn recv_tick(
 
                             // The uuid of the client who has disconnected
                             let removed_uuid =
-                                connected_clients_clone.remove(&address).unwrap().1 .0;
+                                connected_clients_clone.remove(&address).unwrap().1.0;
 
                             // Spawn an async task to broadcast the disconnection message to the clients
                             notify_players_player_disconnect(
@@ -155,7 +186,7 @@ pub fn recv_tick(
 fn notify_players_player_disconnect(
     runtime: &Res<'_, TokioTasksRuntime>,
     connected_clients_clone: std::sync::Arc<
-        dashmap::DashMap<std::net::SocketAddr, (uuid::Uuid, Arc<Mutex<tokio::net::TcpStream>>)>,
+        dashmap::DashMap<std::net::SocketAddr, (uuid::Uuid, Arc<Mutex<OwnedWriteHalf>>)>,
     >,
     removed_uuid: uuid::Uuid,
 ) {

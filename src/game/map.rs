@@ -86,10 +86,19 @@ pub enum MapName {
     Islands(MapInstance),
 }
 
+impl MapNameDiscriminants {
+    pub fn into_map_instance(&self) -> MapInstance {
+        match self {
+            MapNameDiscriminants::FlatGround => MapInstance::map_flatground(),
+            MapNameDiscriminants::Islands => MapInstance::map_islands(),
+        }
+    }
+}
+
 /// Loads entites in from a [`MapInstance`], this is used to load in maps provided by servers.
-pub fn setup_map_from_mapinstance(
+pub fn load_map_from_mapinstance(
     map_instance: MapInstance,
-    mut commands: Commands,
+    commands: &mut Commands,
     collision_groups: CollisionGroupSet,
     current_game_objects: Query<(Entity, &MapElement)>,
     // meshes: ResMut<Assets<Mesh>>,

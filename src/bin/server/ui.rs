@@ -18,7 +18,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
-        map::{setup_map_from_mapinstance, MapElement, MapName, MapNameDiscriminants},
+        map::{load_map_from_mapinstance, MapElement, MapName, MapNameDiscriminants},
     },
     networking::{
         server::{send_request_to_client, setup_remote_client_handler, ServerInstance},
@@ -33,7 +33,7 @@ use tokio::sync::mpsc::channel;
 pub fn ui_system(
     mut contexts: EguiContexts,
     mut app_ctx: ResMut<ApplicationCtx>,
-    commands: Commands,
+    mut commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
@@ -64,6 +64,8 @@ pub fn ui_system(
                             *server_instance.game_state.write() = ServerGameState::Intermission(intermission_data.clone());
                         }
 
+                        app_ctx.intermission_timer = Some(Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once));
+
                         runtime.spawn_background_task(move |_ctx| async move {
                             // These are the sockets which returned an error when reading from them
                             let mut erroring_socket_addresses: Vec<SocketAddr> = vec![];
@@ -71,11 +73,11 @@ pub fn ui_system(
                             // Get the connected clients list
                             for connected_client in dash_map.iter_mut() {
                                 // Get the handle of the TcpStream established when the client was connecting to the server
-                                let (_, tcp_stream) = connected_client.value();
+                                let (_, write_half) = connected_client.value();
 
                                 // Send the disconnection message on the TcpStream specified
                                 if let Err(err) = send_request_to_client(
-                                    &mut tcp_stream.lock(),
+                                    &mut write_half.lock(),
                                     RemoteServerRequest {
                                         request: punchafriend::networking::ServerRequest::ServerGameStateControl(ServerGameState::Intermission(
                                             intermission_data.clone()
@@ -193,9 +195,9 @@ pub fn ui_system(
                         unimplemented!("The server should never reach this point.");
                     }
                     punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
-                        setup_map_from_mapinstance(
+                        load_map_from_mapinstance(
                             map_instance,
-                            commands,
+                            &mut commands,
                             collision_groups.clone(),
                             current_map_objects,
                         );
