@@ -1,5 +1,11 @@
-use std::sync::Arc;
-use punchafriend::{game::map::load_map_from_mapinstance, networking::ServerGameState::Intermission};
+use punchafriend::{
+    game::map::load_map_from_mapinstance,
+    networking::{
+        OngoingGameData,
+        ServerGameState::{self, Intermission},
+    },
+};
+use std::{sync::Arc, time::Duration};
 
 use bevy::{
     asset::Assets,
@@ -13,14 +19,13 @@ use bevy::{
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::Time,
+    time::{Time, Timer},
     transform::components::Transform,
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{KinematicCharacterController, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
-use futures::{FutureExt, TryFutureExt};
 use parking_lot::Mutex;
 use punchafriend::{
     game::{
@@ -29,12 +34,15 @@ use punchafriend::{
         pawns::{handle_game_input, Player},
     },
     networking::{
-        server::{notify_client_about_player_disconnect, send_request_to_client}, GameInput, RemoteServerRequest, ServerTickUpdate
+        server::{notify_client_about_player_disconnect, send_request_to_client},
+        GameInput, RemoteServerRequest, ServerTickUpdate,
     },
     server::ApplicationCtx,
     RandomEngine,
 };
 use tokio::net::tcp::OwnedWriteHalf;
+
+use crate::ui::{create_intermission_data_all, notify_valid_clients_intermission};
 
 pub fn recv_tick(
     mut commands: Commands,
@@ -47,7 +55,7 @@ pub fn recv_tick(
         &Velocity,
     )>,
     mut rand: ResMut<RandomEngine>,
-    runtime: Res<TokioTasksRuntime>,
+    runtime: ResMut<TokioTasksRuntime>,
     collision_groups: Res<CollisionGroupSet>,
     time: Res<Time>,
     current_game_objects: Query<(Entity, &MapElement)>,
@@ -57,7 +65,30 @@ pub fn recv_tick(
 
     // Set the global tick count
     app_ctx.tick_count = current_tick_count;
-    
+
+    // Increment the round timer, to know when does this round finish
+    if let Some(round_timer) = &mut app_ctx.game_round_timer {
+        round_timer.tick(time.delta());
+    }
+
+    // If there is a round timer check the state of it
+    if let Some(round_timer) = app_ctx.game_round_timer.clone() {
+        if round_timer.finished() {
+            if let Some(instance) = &mut app_ctx.server_instance {
+                let client_list = instance.connected_client_game_sockets.clone();
+
+                let intermission_data = create_intermission_data_all();
+
+                *instance.game_state.write() =
+                    ServerGameState::Intermission(intermission_data.clone());
+
+                notify_valid_clients_intermission(&runtime, client_list, intermission_data);
+
+                app_ctx.game_round_timer = None;
+            }
+        }
+    }
+
     // If there is any existing intermission timer increment it
     if let Some(timer) = &mut app_ctx.intermission_timer {
         timer.tick(time.delta());
@@ -69,15 +100,17 @@ pub fn recv_tick(
             // If the countdown has ended notify all the client
             if timer.finished() {
                 let game_state = server_instance.game_state.read().clone();
-            
+
                 if let Intermission(intermission_data) = game_state {
-                    let most_voted_entry = intermission_data.selectable_maps.iter().max_by_key(|e| e.1);
+                    let most_voted_entry =
+                        intermission_data.selectable_maps.iter().max_by_key(|e| e.1);
 
                     if let Some((voted_map_name, _vote_count)) = most_voted_entry {
-                        let connected_client_list = server_instance.connected_client_game_sockets.clone();
-                        
+                        let connected_client_list =
+                            server_instance.connected_client_game_sockets.clone();
+
                         let map_instance = voted_map_name.into_map_instance();
-                        
+
                         let map_instance_clone = map_instance.clone();
 
                         runtime.spawn_background_task(async move |_task| {
@@ -86,16 +119,27 @@ pub fn recv_tick(
                                 let (_, write_half) = entry.value_mut();
 
                                 // Send the message to the client
-                                send_request_to_client(&mut *write_half.lock(), RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(map_instance.clone()))}).await.unwrap();
+                                send_request_to_client(&mut write_half.lock(), RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(OngoingGameData::new(map_instance.clone(), Timer::new(Duration::from_secs(60 * 8), bevy::time::TimerMode::Once))))}).await.unwrap();
                             }
                         });
 
-                        load_map_from_mapinstance(map_instance_clone.clone(), &mut commands, collision_groups.clone(), current_game_objects);
+                        load_map_from_mapinstance(
+                            map_instance_clone.clone(),
+                            &mut commands,
+                            collision_groups.clone(),
+                            current_game_objects,
+                        );
                     }
                 }
-                
+
                 // Reset the timer's state
                 app_ctx.intermission_timer = None;
+
+                // Reset the round timer's state
+                app_ctx.game_round_timer = Some(Timer::new(
+                    Duration::from_secs(60 * 8),
+                    bevy::time::TimerMode::Once,
+                ));
             }
         }
 
@@ -103,20 +147,24 @@ pub fn recv_tick(
             if let Some(tcp_receiver) = &mut server_instance.client_tcp_receiver {
                 if let Ok(message) = tcp_receiver.try_recv() {
                     match message.request {
-                        punchafriend::networking::ClientRequest::Vote(voted_map_name_discriminant) => {
-                            match &mut *server_instance.game_state.clone().write() {
-                                punchafriend::networking::ServerGameState::Pause => {
-
-                                },
-                                punchafriend::networking::ServerGameState::Intermission(server_intermission_data) => {
-                                    if let Some(idx) = server_intermission_data.selectable_maps.iter().position(|(map, _)| *map == voted_map_name_discriminant) {
-                                        server_intermission_data.selectable_maps[idx].1 += 1;
-                                    }
-                                },
-                                punchafriend::networking::ServerGameState::OngoingGame(_map_instance) => {
-                                    
-                                },
+                        punchafriend::networking::ClientRequest::Vote(
+                            voted_map_name_discriminant,
+                        ) => match &mut *server_instance.game_state.clone().write() {
+                            punchafriend::networking::ServerGameState::Pause => {}
+                            punchafriend::networking::ServerGameState::Intermission(
+                                server_intermission_data,
+                            ) => {
+                                if let Some(idx) = server_intermission_data
+                                    .selectable_maps
+                                    .iter()
+                                    .position(|(map, _)| *map == voted_map_name_discriminant)
+                                {
+                                    server_intermission_data.selectable_maps[idx].1 += 1;
+                                }
                             }
+                            punchafriend::networking::ServerGameState::OngoingGame(
+                                _map_instance,
+                            ) => {}
                         },
                     }
                 }
@@ -164,7 +212,7 @@ pub fn recv_tick(
 
                             // The uuid of the client who has disconnected
                             let removed_uuid =
-                                connected_clients_clone.remove(&address).unwrap().1.0;
+                                connected_clients_clone.remove(&address).unwrap().1 .0;
 
                             // Spawn an async task to broadcast the disconnection message to the clients
                             notify_players_player_disconnect(
@@ -184,7 +232,7 @@ pub fn recv_tick(
 }
 
 fn notify_players_player_disconnect(
-    runtime: &Res<'_, TokioTasksRuntime>,
+    runtime: &ResMut<'_, TokioTasksRuntime>,
     connected_clients_clone: std::sync::Arc<
         dashmap::DashMap<std::net::SocketAddr, (uuid::Uuid, Arc<Mutex<OwnedWriteHalf>>)>,
     >,

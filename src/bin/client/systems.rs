@@ -194,18 +194,21 @@ pub fn handle_server_output(
                     punchafriend::networking::ServerGameState::Intermission(intermission_data) => {
                         // Set the application's state
                         app_ctx.ui_layer = UiLayer::Intermission(intermission_data);
+
+                        // Make the user able to vote again
+                        app_ctx.has_voted = false;
                     }
-                    punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
+                    punchafriend::networking::ServerGameState::OngoingGame(ongoing_game_data) => {
                         // Setup map for client-side from a mapinstance
                         load_map_from_mapinstance(
-                            map_instance,
+                            ongoing_game_data.current_map.clone(),
                             &mut commands,
                             collision_groups.clone(),
                             game_objects,
                         );
 
                         // Set the application's state
-                        app_ctx.ui_layer = UiLayer::Game;
+                        app_ctx.ui_layer = UiLayer::Game(ongoing_game_data);
                     }
                 },
             }
@@ -222,7 +225,7 @@ pub fn handle_server_output(
                     }
 
                     // Set the window to be displaying game
-                    app_ctx.ui_layer = UiLayer::Game;
+                    // app_ctx.ui_layer = UiLayer::Game();
 
                     // Set the client connection variable
                     app_ctx.client_connection = Some(client_connection);
@@ -248,7 +251,7 @@ pub fn handle_user_input(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     keyboard_input: Res<'_, ButtonInput<KeyCode>>,
 ) {
-    if app_ctx.ui_layer != UiLayer::Game {
+    if !matches!(app_ctx.ui_layer, UiLayer::Game(_)) {
         return;
     }
 

@@ -50,7 +50,22 @@ pub fn ui_system(
 
     // Match the UiLayer enum's state
     match app_ctx.ui_layer.clone() {
-        UiLayer::Game => {}
+        UiLayer::Game(mut ongoing_game_data) => {
+            ongoing_game_data.round_length.tick(time.delta());
+
+            egui::Area::new("hud".into())
+                .anchor(Align2::CENTER_TOP, vec2(0., 20.))
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "Round time: {:.2}s",
+                        ongoing_game_data.round_length.duration().as_secs_f32()
+                            - ongoing_game_data.round_length.elapsed_secs()
+                    ));
+                });
+
+            // Set the new value of the UiLayer's enum
+            app_ctx.ui_layer = UiLayer::Game(ongoing_game_data.clone());
+        }
         UiLayer::Intermission(mut intermission_data) => {
             // Tick the countdown timer
             intermission_data
@@ -62,11 +77,12 @@ pub fn ui_system(
                     ui.label(RichText::from("Vote for the next map!").size(20.).strong());
 
                     ui.label(format!(
-                        "Time elapsed: {}s",
+                        "Time left: {:.2}s",
+                        intermission_data.intermission_duration_left.duration().as_secs_f32() - 
                         intermission_data
                             .intermission_duration_left
                             .elapsed()
-                            .as_secs()
+                            .as_secs_f32()
                     ));
                 });
 
@@ -79,22 +95,31 @@ pub fn ui_system(
                             ui.allocate_ui(vec2(100., 100.), |ui| {
                                 ui.vertical_centered(|ui| {
                                     // Display the map's name
-                                    ui.label(RichText::from(map.to_string()).strong());
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::from(map.to_string()).strong());
+                                        ui.label(RichText::from(vote_count.to_string()).strong());
+                                    });
 
                                     // Display an image of the map
                                     ui.image(egui::include_image!(
                                         "../../../assets/map_imgs/test.png"
                                     ));
 
-                                    // Show the button to vote
-                                    if ui.button("Vote").clicked() {
-                                        if let Some(client_connection) = &app_ctx.client_connection {
-                                            client_connection.remote_server_sender.try_send(RemoteClientRequest {
-                                                id: client_connection.server_metadata.client_uuid,
-                                                request: punchafriend::networking::ClientRequest::Vote(*map),
-                                            }).unwrap();
-                                        }
-                                    };
+                                    // Show the vote button as available if the user hasnt voted yet.
+                                    ui.add_enabled_ui(!app_ctx.has_voted, |ui| {
+                                        // Show the button to vote
+                                        if ui.button("Vote").clicked() {
+                                            if let Some(client_connection) = &app_ctx.client_connection {
+                                                client_connection.remote_server_sender.try_send(RemoteClientRequest {
+                                                    id: client_connection.server_metadata.client_uuid,
+                                                    request: punchafriend::networking::ClientRequest::Vote(*map),
+                                                }).unwrap();
+                                            }
+
+                                            // Prevent the user for voting multiple times
+                                            app_ctx.has_voted = true;
+                                        };
+                                    });
                                 });
                             });
                         });
@@ -210,7 +235,7 @@ pub fn ui_system(
                         .show(ctx, |ui| {
                             ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
                                 if ui.add(egui::Button::new("Resume").frame(false)).clicked() {
-                                    app_ctx.ui_layer = UiLayer::Game;
+                                    app_ctx.ui_layer = *state_before.clone();
                                 }
 
                                 if ui.add(egui::Button::new("Options").frame(false)).clicked() {

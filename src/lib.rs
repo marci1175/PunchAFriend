@@ -2,7 +2,7 @@ pub mod game;
 pub mod networking;
 
 use bevy::ecs::system::Resource;
-use networking::IntermissionData;
+use networking::{IntermissionData, OngoingGameData};
 use rand::{rngs::SmallRng, SeedableRng};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
@@ -16,7 +16,7 @@ pub enum Direction {
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UiLayer {
-    Game,
+    Game(OngoingGameData),
     Intermission(IntermissionData),
     #[default]
     MainMenu,
@@ -71,6 +71,7 @@ pub mod server {
         pub tick_count: u64,
 
         pub intermission_timer: Option<Timer>,
+        pub game_round_timer: Option<Timer>,
     }
 
     impl Default for ApplicationCtx {
@@ -85,6 +86,7 @@ pub mod server {
                 client_list: Arc::new(RwLock::new(vec![])),
                 tick_count: 0,
                 intermission_timer: None,
+                game_round_timer: None,
             }
         }
     }
@@ -148,6 +150,8 @@ pub mod client {
 
         #[serde(skip)]
         pub texture_atlas_layouts: Handle<TextureAtlasLayout>,
+
+        pub has_voted: bool,
     }
 
     impl Default for ApplicationCtx {
@@ -166,6 +170,7 @@ pub mod client {
                 cancellation_token: CancellationToken::new(),
                 settings: Settings::default(),
                 texture_atlas_layouts: Handle::<TextureAtlasLayout>::default(),
+                has_voted: false,
             }
         }
     }

@@ -1,4 +1,3 @@
-
 use bevy::{time::Timer, transform::components::Transform};
 use bevy_rapier2d::prelude::Velocity;
 use tokio::io::AsyncWriteExt;
@@ -61,8 +60,26 @@ pub enum ServerGameState {
     Pause,
     /// Intermission state, in an intermission state clients can vote on the next map.
     Intermission(IntermissionData),
-    /// Going game, this is sent if there is a game available to join immediately
-    OngoingGame(MapInstance),
+    /// Ongoing game, this is sent if there is a game available to join immediately
+    OngoingGame(OngoingGameData),
+}
+
+/// Contains all the information relating to this ongoing round's important data.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct OngoingGameData {
+    /// Current map loaded
+    pub current_map: MapInstance,
+    /// Round timer
+    pub round_length: Timer,
+}
+
+impl OngoingGameData {
+    pub fn new(current_map: MapInstance, round_length: Timer) -> Self {
+        Self {
+            current_map,
+            round_length,
+        }
+    }
 }
 
 /// The types of messages a client can sent to control the server.

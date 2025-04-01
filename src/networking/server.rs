@@ -1,17 +1,19 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bevy::{ecs::system::ResMut, transform::components::Transform};
+use bevy::{ecs::system::ResMut, time::Timer, transform::components::Transform};
 use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
     LockedAxes, RigidBody, Velocity,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use dashmap::DashMap;
-use futures::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
     io::AsyncReadExt,
-    net::{tcp::{OwnedReadHalf, OwnedWriteHalf, WriteHalf}, TcpListener, TcpSocket, TcpStream, UdpSocket},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpListener, TcpSocket, TcpStream, UdpSocket,
+    },
     select,
     sync::mpsc::{channel, Receiver, Sender},
 };
@@ -24,8 +26,8 @@ use crate::{
 };
 
 use super::{
-    write_to_buf_with_len, EndpointMetadata, RemoteClientGameRequest, RemoteServerRequest,
-    ServerGameState, ServerMetadata, ServerRequest,
+    write_to_buf_with_len, EndpointMetadata, OngoingGameData, RemoteClientGameRequest,
+    RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest,
 };
 
 #[derive(Debug, Clone)]
@@ -82,7 +84,10 @@ impl ServerInstance {
             connected_client_game_sockets: Arc::new(DashMap::new()),
             client_tcp_receiver: None,
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
-                MapInstance::map_flatground(),
+                OngoingGameData::new(
+                    MapInstance::map_flatground(),
+                    Timer::new(Duration::from_secs(60 * 8), bevy::time::TimerMode::Once),
+                ),
             ))),
         })
     }
@@ -111,7 +116,7 @@ pub fn setup_remote_client_handler(
 
     let server_game_state = server_instance.game_state.clone();
 
-    server_instance.client_tcp_receiver = Some(tcp_receiver); 
+    server_instance.client_tcp_receiver = Some(tcp_receiver);
     server_instance.client_udp_receiver = Some(receiver);
 
     // Spawn the incoming connection accepter thread

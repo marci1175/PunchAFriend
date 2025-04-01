@@ -8,7 +8,7 @@ use bevy::{
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::Timer,
+    time::{Time, Timer},
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
@@ -18,7 +18,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
-        map::{load_map_from_mapinstance, MapElement, MapName, MapNameDiscriminants},
+        map::{load_map_from_mapinstance, MapElement, MapNameDiscriminants},
     },
     networking::{
         server::{send_request_to_client, setup_remote_client_handler, ServerInstance},
@@ -39,66 +39,45 @@ pub fn ui_system(
     collision_groups: Res<CollisionGroupSet>,
     current_map_objects: Query<(Entity, &MapElement)>,
     runtime: ResMut<TokioTasksRuntime>,
+    time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
 
-    match app_ctx.ui_mode {
+    match app_ctx.ui_mode.clone() {
         // If there is a game currently playing we should display the HUD.
-        punchafriend::UiLayer::Game => {
+        punchafriend::UiLayer::Game(_ongoing_game_data) => {
             egui::SidePanel::left("server_panel").show(ctx, |ui| {
                 if let Some(inst) = &app_ctx.server_instance {
+                    if let Some(round_timer) = &app_ctx.game_round_timer {
+                        ui.label(format!(
+                            "Time left: {:.2}s",
+                            round_timer.duration().as_secs_f32() - round_timer.elapsed_secs()
+                        ));
+                    }
+
                     ui.label(format!("Port: {}", inst.tcp_listener_port));
 
                     if ui.button("Set intermission state").clicked() {
                         let dash_map = inst.connected_client_game_sockets.clone();
 
-                        let intermission_data = IntermissionData::new(
-                            MapNameDiscriminants::VARIANTS.to_vec().iter().map(|map| (*map, 0)).collect::<Vec<(MapNameDiscriminants, usize)>>(),
-                            Timer::new(
-                                Duration::from_secs(30),
-                                bevy::time::TimerMode::Once,
-                            ),
-                        );
+                        let intermission_data = create_intermission_data_all();
 
                         if let Some(server_instance) = &app_ctx.server_instance {
-                            *server_instance.game_state.write() = ServerGameState::Intermission(intermission_data.clone());
+                            *server_instance.game_state.write() =
+                                ServerGameState::Intermission(intermission_data.clone());
                         }
 
-                        app_ctx.intermission_timer = Some(Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once));
+                        app_ctx.intermission_timer = Some(Timer::new(
+                            Duration::from_secs(30),
+                            bevy::time::TimerMode::Once,
+                        ));
 
-                        runtime.spawn_background_task(move |_ctx| async move {
-                            // These are the sockets which returned an error when reading from them
-                            let mut erroring_socket_addresses: Vec<SocketAddr> = vec![];
-
-                            // Get the connected clients list
-                            for connected_client in dash_map.iter_mut() {
-                                // Get the handle of the TcpStream established when the client was connecting to the server
-                                let (_, write_half) = connected_client.value();
-
-                                // Send the disconnection message on the TcpStream specified
-                                if let Err(err) = send_request_to_client(
-                                    &mut write_half.lock(),
-                                    RemoteServerRequest {
-                                        request: punchafriend::networking::ServerRequest::ServerGameStateControl(ServerGameState::Intermission(
-                                            intermission_data.clone()
-                                        ))
-                                    },
-                                )
-                                .await
-                                {
-                                    dbg!(err);
-
-                                    erroring_socket_addresses.push(*connected_client.key());
-                                };
-                            }
-
-                            for erroring_socket in &erroring_socket_addresses {
-                                dash_map.remove(erroring_socket);
-                            }
-                        });
+                        notify_valid_clients_intermission(&runtime, dash_map, intermission_data);
                     }
                 }
             });
+
+            // app_ctx.ui_mode = UiLayer::Game(ongoing_game_data.clone());
         }
         // Display main menu window.
         punchafriend::UiLayer::MainMenu => {
@@ -141,8 +120,6 @@ pub fn ui_system(
                                 // Send the new instance through the channel
                                 sender.send(connection_result).await.unwrap();
                             });
-
-                            app_ctx.ui_mode = UiLayer::Game;
                         };
 
                         ui.add_space(50.);
@@ -194,15 +171,23 @@ pub fn ui_system(
                     punchafriend::networking::ServerGameState::Intermission(_) => {
                         unimplemented!("The server should never reach this point.");
                     }
-                    punchafriend::networking::ServerGameState::OngoingGame(map_instance) => {
+                    punchafriend::networking::ServerGameState::OngoingGame(game_data) => {
                         load_map_from_mapinstance(
-                            map_instance,
+                            game_data.current_map.clone(),
                             &mut commands,
                             collision_groups.clone(),
                             current_map_objects,
                         );
+
+                        app_ctx.ui_mode = UiLayer::Game(game_data.clone());
                     }
                 }
+
+                // Reset the round timer's state
+                app_ctx.game_round_timer = Some(Timer::new(
+                    Duration::from_secs(60 * 8),
+                    bevy::time::TimerMode::Once,
+                ));
 
                 drop(game_state);
 
@@ -219,4 +204,66 @@ pub fn ui_system(
             Err(err) => {}
         }
     }
+}
+
+pub fn create_intermission_data_all() -> IntermissionData {
+    let intermission_data = IntermissionData::new(
+        MapNameDiscriminants::VARIANTS
+            .to_vec()
+            .iter()
+            .map(|map| (*map, 0))
+            .collect::<Vec<(MapNameDiscriminants, usize)>>(),
+        Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once),
+    );
+    intermission_data
+}
+
+pub fn notify_valid_clients_intermission(
+    runtime: &ResMut<'_, TokioTasksRuntime>,
+    dash_map: std::sync::Arc<
+        dashmap::DashMap<
+            SocketAddr,
+            (
+                uuid::Uuid,
+                std::sync::Arc<
+                    parking_lot::lock_api::Mutex<
+                        parking_lot::RawMutex,
+                        tokio::net::tcp::OwnedWriteHalf,
+                    >,
+                >,
+            ),
+        >,
+    >,
+    intermission_data: IntermissionData,
+) {
+    runtime.spawn_background_task(move |_ctx| async move {
+        // These are the sockets which returned an error when reading from them
+        let mut erroring_socket_addresses: Vec<SocketAddr> = vec![];
+
+        // Get the connected clients list
+        for connected_client in dash_map.iter_mut() {
+            // Get the handle of the TcpStream established when the client was connecting to the server
+            let (_, write_half) = connected_client.value();
+
+            // Send the disconnection message on the TcpStream specified
+            if let Err(err) = send_request_to_client(
+                &mut write_half.lock(),
+                RemoteServerRequest {
+                    request: punchafriend::networking::ServerRequest::ServerGameStateControl(
+                        ServerGameState::Intermission(intermission_data.clone()),
+                    ),
+                },
+            )
+            .await
+            {
+                dbg!(err);
+
+                erroring_socket_addresses.push(*connected_client.key());
+            };
+        }
+
+        for erroring_socket in &erroring_socket_addresses {
+            dash_map.remove(erroring_socket);
+        }
+    });
 }

@@ -16,14 +16,14 @@ use super::collision::CollisionGroupSet;
 /// This is used to make difference between Entities which are a part of the obstacles contained in the map.
 pub struct MapElement;
 
-#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct MapObject {
     pub size: Vec2,
     pub position: Vec2,
     pub texture_name: String,
 }
 
-#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct MapInstance {
     pub objects: Vec<MapObject>,
 }
@@ -120,7 +120,6 @@ pub fn load_map_from_mapinstance(
             ))
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(collision_groups.map_object)
-            // .insert(Sprite {})
             .insert(MapElement);
     }
 }
