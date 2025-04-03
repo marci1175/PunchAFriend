@@ -10,7 +10,7 @@ use strum::EnumDiscriminants;
 
 use crate::{game::collision::CollisionGroupSet, Direction};
 
-use super::pawns::Player;
+use super::pawns::Pawn;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Combo {
@@ -102,7 +102,7 @@ pub fn spawn_attack(
     collision_groups: &CollisionGroupSet,
     rand: &mut SmallRng,
     entity: Entity,
-    local_player: &mut Player,
+    local_player: &mut Pawn,
     transform: &Transform,
     attack_collider: Collider,
     attack_transform: Transform,

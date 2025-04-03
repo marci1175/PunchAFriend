@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::combat::{spawn_attack, Combo, Effect, EffectType};
 
 /// This function modifies the direction variable of the `LocalPlayer`, the variable is always the key last pressed by the user.
-pub fn set_movement_direction_var(game_input: &GameInput, local_player: &mut Mut<'_, Player>) {
+pub fn set_movement_direction_var(game_input: &GameInput, local_player: &mut Mut<'_, Pawn>) {
     if *game_input == GameInput::MoveRight {
         // Update latest direction
         local_player.direction = Direction::Right;
@@ -36,7 +36,7 @@ pub fn player_movement(
     game_input: &GameInput,
     time: &Time,
     entity: Entity,
-    player: &mut Mut<'_, Player>,
+    player: &mut Mut<'_, Pawn>,
     controller: &mut KinematicCharacterController,
 ) {
     let move_factor = 450. * {
@@ -75,7 +75,7 @@ pub fn player_attack(
     collision_groups: &CollisionGroupSet,
     rand: &mut SmallRng,
     entity: Entity,
-    local_player: &mut Player,
+    local_player: &mut Pawn,
     transform: &Transform,
 ) {
     let (attack_collider_width, attack_collider_height) = (50., 50.);
@@ -120,7 +120,7 @@ pub fn player_attack(
 pub fn handle_game_input(
     query: &mut (
         Entity,
-        Mut<Player>,
+        Mut<Pawn>,
         Mut<KinematicCharacterController>,
         &Transform,
         &Velocity,
@@ -163,7 +163,7 @@ pub fn handle_game_input(
 
 #[derive(Component, Clone, Default, serde::Deserialize, serde::Serialize, Debug)]
 /// A Player instance contains useful information about a Player entity.
-pub struct Player {
+pub struct Pawn {
     /// Contains the health points of the [`Player`].
     pub health: f32,
     /// The current effects the player has.
@@ -181,7 +181,7 @@ pub struct Player {
     pub id: Uuid,
 }
 
-impl Player {
+impl Pawn {
     /// Iterates over all the effects, and checks if they're still valid. The effects are removed if the [`Duration`] given to them expires.
     pub fn tick_effects(&mut self, delta: Duration) {
         self.effects.retain_mut(|effect| {
@@ -211,4 +211,22 @@ impl Player {
             ..Default::default()
         }
     }
+}
+
+pub enum PawnType {
+    Knight,
+    Ninja,
+    Soldier,
+    Human,
+    Schoolgirl,
+}
+
+pub struct PawnAttribute {
+    pub speed: f32,
+    pub jump_height: f32,
+    pub attack_speed: f32,
+}
+
+pub trait CustomAttack {
+    fn spawn_attack(&self, commands: Commands);
 }

@@ -30,7 +30,7 @@ use punchafriend::{
     game::{
         collision::CollisionGroupSet,
         map::{load_map_from_mapinstance, MapElement},
-        pawns::Player,
+        pawns::Pawn,
     },
     networking::GameInput,
     PauseWindowState, UiLayer,
@@ -55,7 +55,7 @@ pub fn handle_server_output(
         '_,
         (
             Entity,
-            &mut Player,
+            &mut Pawn,
             &mut Transform,
             &mut Velocity,
             &mut UniqueLastTickCount,

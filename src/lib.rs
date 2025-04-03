@@ -152,6 +152,8 @@ pub mod client {
         pub texture_atlas_layouts: Handle<TextureAtlasLayout>,
 
         pub has_voted: bool,
+
+        pub custom_textures: Option<CustomTexture>,
     }
 
     impl Default for ApplicationCtx {
@@ -171,6 +173,7 @@ pub mod client {
                 settings: Settings::default(),
                 texture_atlas_layouts: Handle::<TextureAtlasLayout>::default(),
                 has_voted: false,
+                custom_textures: None,
             }
         }
     }
@@ -178,6 +181,15 @@ pub mod client {
     #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
     pub struct Settings {
         pub fps: f64,
+    }
+
+    #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
+    pub struct CustomTexture {
+        pub walk: PathBuf,
+        pub idle: PathBuf,
+        pub attack: PathBuf,
+        pub hurt: PathBuf,
+        pub jump: PathBuf,
     }
 }
 

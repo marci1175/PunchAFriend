@@ -1,11 +1,12 @@
 use bevy::{time::Timer, transform::components::Transform};
 use bevy_rapier2d::prelude::Velocity;
+use chrono::{DateTime, Utc};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use crate::game::{
     map::{MapInstance, MapNameDiscriminants},
-    pawns::Player,
+    pawns::Pawn,
 };
 
 pub mod client;
@@ -69,15 +70,15 @@ pub enum ServerGameState {
 pub struct OngoingGameData {
     /// Current map loaded
     pub current_map: MapInstance,
-    /// Round timer
-    pub round_length: Timer,
+    /// Round end date
+    pub round_end_date: DateTime<Utc>,
 }
 
 impl OngoingGameData {
-    pub fn new(current_map: MapInstance, round_length: Timer) -> Self {
+    pub fn new(current_map: MapInstance, round_end_date: DateTime<Utc>) -> Self {
         Self {
             current_map,
-            round_length,
+            round_end_date,
         }
     }
 }
@@ -94,17 +95,17 @@ pub enum ClientRequest {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct IntermissionData {
     pub selectable_maps: Vec<(MapNameDiscriminants, usize)>,
-    pub intermission_duration_left: Timer,
+    pub intermission_end_date: DateTime<Utc>,
 }
 
 impl IntermissionData {
     pub fn new(
         selectable_maps: Vec<(MapNameDiscriminants, usize)>,
-        intermission_duration_left: Timer,
+        intermission_end_date: DateTime<Utc>,
     ) -> Self {
         Self {
             selectable_maps,
-            intermission_duration_left,
+            intermission_end_date,
         }
     }
 }
@@ -118,13 +119,13 @@ pub struct ServerTickUpdate {
     /// The velocity of the Entity, this is used so that the client can extrapolate the player's position via its physics engine. Please note that this is really inaccurate and extrapolation should be implemented.
     pub velocity: Velocity,
     /// Important information about the entitiy's [`Player`] instance.
-    pub player: Player,
+    pub player: Pawn,
     /// The nth tick this packet was sent from.
     pub tick_count: u64,
 }
 
 impl ServerTickUpdate {
-    pub fn new(position: Transform, velocity: Velocity, player: Player, tick_count: u64) -> Self {
+    pub fn new(position: Transform, velocity: Velocity, player: Pawn, tick_count: u64) -> Self {
         Self {
             position,
             velocity,

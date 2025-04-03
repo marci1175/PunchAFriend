@@ -1,3 +1,4 @@
+use chrono::{Local, TimeDelta};
 use punchafriend::{
     game::map::load_map_from_mapinstance,
     networking::{
@@ -31,7 +32,7 @@ use punchafriend::{
     game::{
         collision::{check_for_collision_with_map_and_player, CollisionGroupSet},
         map::MapElement,
-        pawns::{handle_game_input, Player},
+        pawns::{handle_game_input, Pawn},
     },
     networking::{
         server::{notify_client_about_player_disconnect, send_request_to_client},
@@ -49,7 +50,7 @@ pub fn recv_tick(
     mut app_ctx: ResMut<ApplicationCtx>,
     mut players_query: Query<(
         Entity,
-        Mut<Player>,
+        Mut<Pawn>,
         Mut<KinematicCharacterController>,
         &Transform,
         &Velocity,
@@ -114,12 +115,14 @@ pub fn recv_tick(
                         let map_instance_clone = map_instance.clone();
 
                         runtime.spawn_background_task(async move |_task| {
+                            let round_start_date = Local::now().to_utc();
+                            
                             // Iter over all the clients    
                             for mut entry in connected_client_list.iter_mut() {
                                 let (_, write_half) = entry.value_mut();
 
                                 // Send the message to the client
-                                send_request_to_client(&mut write_half.lock(), RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(OngoingGameData::new(map_instance.clone(), Timer::new(Duration::from_secs(60 * 8), bevy::time::TimerMode::Once))))}).await.unwrap();
+                                send_request_to_client(&mut write_half.lock(), RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(OngoingGameData::new(map_instance.clone(), round_start_date.checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * 60)).unwrap()).unwrap())))}).await.unwrap();
                             }
                         });
 
@@ -257,7 +260,7 @@ pub fn send_tick(
     players_query: Query<
         (
             Entity,
-            Mut<Player>,
+            Mut<Pawn>,
             Mut<KinematicCharacterController>,
             &Transform,
             &Velocity,
@@ -319,8 +322,8 @@ pub fn send_tick(
 pub fn reset_jump_remaining_for_player(
     collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    character_entity_query: Query<Entity, With<Player>>,
-    mut local_player_query: Query<&mut Player>,
+    character_entity_query: Query<Entity, With<Pawn>>,
+    mut local_player_query: Query<&mut Pawn>,
 ) {
     if let Some(colliding_entity) = check_for_collision_with_map_and_player(
         collision_events,

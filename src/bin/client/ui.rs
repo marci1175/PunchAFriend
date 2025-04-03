@@ -1,5 +1,7 @@
+use std::fs;
+
 use bevy::{
-    asset::Assets,
+    asset::{AssetId, Assets},
     ecs::{
         entity::Entity,
         system::{Commands, Query, Res, ResMut},
@@ -17,9 +19,10 @@ use bevy_egui::{
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_tokio_tasks::TokioTasksRuntime;
 
+use chrono::{DateTime, Local};
 use punchafriend::{
     client::ApplicationCtx,
-    game::{collision::CollisionGroupSet, pawns::Player},
+    game::{collision::CollisionGroupSet, pawns::Pawn},
     networking::{client::ClientConnection, RemoteClientRequest},
     PauseWindowState, UiLayer,
 };
@@ -30,12 +33,12 @@ pub fn ui_system(
     mut context: EguiContexts,
     mut app_ctx: ResMut<ApplicationCtx>,
     runtime: ResMut<TokioTasksRuntime>,
-    players: Query<(Entity, &mut Player, &mut Transform)>,
+    players: Query<(Entity, &mut Pawn, &mut Transform)>,
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<TextureAtlasLayout>>,
+    mut materials: ResMut<Assets<TextureAtlasLayout>>,
     collision_groups: Res<CollisionGroupSet>,
     mut framepace: ResMut<FramepaceSettings>,
 ) {
@@ -48,41 +51,34 @@ pub fn ui_system(
     // Show toasts
     app_ctx.egui_toasts.show(ctx);
 
+    let local_utc_time = Local::now().to_utc();
+
     // Match the UiLayer enum's state
     match app_ctx.ui_layer.clone() {
-        UiLayer::Game(mut ongoing_game_data) => {
-            ongoing_game_data.round_length.tick(time.delta());
+        UiLayer::Game(ongoing_game_data) => {
+            // How much time is left from the round
+            let time_delta = ongoing_game_data.round_end_date.time().signed_duration_since(local_utc_time.time());
 
             egui::Area::new("hud".into())
                 .anchor(Align2::CENTER_TOP, vec2(0., 20.))
                 .show(ctx, |ui| {
                     ui.label(format!(
                         "Round time: {:.2}s",
-                        ongoing_game_data.round_length.duration().as_secs_f32()
-                            - ongoing_game_data.round_length.elapsed_secs()
+                        time_delta.num_milliseconds() as f32 / 1000.
                     ));
                 });
 
             // Set the new value of the UiLayer's enum
             app_ctx.ui_layer = UiLayer::Game(ongoing_game_data.clone());
         }
-        UiLayer::Intermission(mut intermission_data) => {
-            // Tick the countdown timer
-            intermission_data
-                .intermission_duration_left
-                .tick(time.delta());
-
+        UiLayer::Intermission(intermission_data) => {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.label(RichText::from("Vote for the next map!").size(20.).strong());
 
                     ui.label(format!(
-                        "Time left: {:.2}s",
-                        intermission_data.intermission_duration_left.duration().as_secs_f32() - 
-                        intermission_data
-                            .intermission_duration_left
-                            .elapsed()
-                            .as_secs_f32()
+                        "Time left: {}s",
+                        intermission_data.intermission_end_date.time().signed_duration_since(local_utc_time.time()).num_seconds()
                     ));
                 });
 
@@ -271,6 +267,18 @@ pub fn ui_system(
 
                             if fps_slider.changed() {
                                 framepace.limiter = Limiter::from_framerate(app_ctx.settings.fps);
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Textures");
+
+                            if ui.button("Reload all Textures").clicked() {
+                                for material in materials.iter().map(|(mat, _la)| {
+                                    mat.clone()
+                                }).collect::<Vec<AssetId<TextureAtlasLayout>>>().into_iter() {
+                                    materials.remove(material);
+                                }
                             }
                         });
                     }),

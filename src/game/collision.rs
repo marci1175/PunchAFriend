@@ -17,7 +17,7 @@ use crate::Direction;
 use super::{
     combat::{AttackObject, AttackType, Combo},
     map::MapElement,
-    pawns::Player,
+    pawns::Pawn,
 };
 
 #[repr(u32)]
@@ -69,7 +69,7 @@ impl CollisionGroupSet {
 pub fn check_for_collision_with_map_and_player(
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
     map_element_query: Query<Entity, With<MapElement>>,
-    player_entity_query: Query<Entity, With<Player>>,
+    player_entity_query: Query<Entity, With<Pawn>>,
 ) -> Option<Entity> {
     if let Some(collision) = collision_events.read().next() {
         match collision {
@@ -120,7 +120,7 @@ pub fn check_for_collision_with_map_and_player(
 pub fn check_for_collision_with_attack_object(
     mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
-    mut foreign_character_query: Query<(Entity, &mut Player, &Transform, &Velocity)>,
+    mut foreign_character_query: Query<(Entity, &mut Pawn, &Transform, &Velocity)>,
     attack_object_query: Query<(Entity, &AttackObject)>,
 ) {
     for collision in collision_events.read() {

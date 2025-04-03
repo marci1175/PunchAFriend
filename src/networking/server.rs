@@ -6,6 +6,7 @@ use bevy_rapier2d::prelude::{
     LockedAxes, RigidBody, Velocity,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
+use chrono::{Local, TimeDelta};
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use tokio::{
@@ -21,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    game::{collision::CollisionGroupSet, map::MapInstance, pawns::Player},
+    game::{collision::CollisionGroupSet, map::MapInstance, pawns::Pawn},
     networking::{GameInput, RemoteClientRequest, UDP_DATAGRAM_SIZE},
 };
 
@@ -75,6 +76,8 @@ impl ServerInstance {
 
         let udp_socket_port = udp_socket.local_addr()?.port();
 
+        let round_start_date = Local::now().to_utc();
+
         Ok(Self {
             tcp_listener: Arc::new(Mutex::new(tcp_listener)),
             udp_socket: Arc::new(udp_socket),
@@ -86,7 +89,7 @@ impl ServerInstance {
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
                 OngoingGameData::new(
                     MapInstance::map_flatground(),
-                    Timer::new(Duration::from_secs(60 * 8), bevy::time::TimerMode::Once),
+                    round_start_date.checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * 60))?).unwrap()
                 ),
             ))),
         })
@@ -157,7 +160,7 @@ pub fn setup_remote_client_handler(
                             .insert(collision_groups.player)
                             .insert(Ccd::enabled())
                             .insert(Velocity::default())
-                            .insert(Player::new_from_id(uuid)); 
+                            .insert(Pawn::new_from_id(uuid)); 
                         }).await;
 
                         // Save the connected clients handle and ports

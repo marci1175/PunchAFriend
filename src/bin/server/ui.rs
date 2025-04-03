@@ -15,6 +15,7 @@ use bevy_egui::{
     EguiContexts,
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
+use chrono::{Local, TimeDelta};
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
@@ -188,7 +189,7 @@ pub fn ui_system(
                     Duration::from_secs(60 * 8),
                     bevy::time::TimerMode::Once,
                 ));
-
+                
                 drop(game_state);
 
                 // Initalize server threads
@@ -213,7 +214,7 @@ pub fn create_intermission_data_all() -> IntermissionData {
             .iter()
             .map(|map| (*map, 0))
             .collect::<Vec<(MapNameDiscriminants, usize)>>(),
-        Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once),
+        Local::now().to_utc().checked_add_signed(TimeDelta::try_seconds(30).unwrap()).unwrap(),
     );
     intermission_data
 }
