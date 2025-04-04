@@ -52,6 +52,7 @@ pub enum ServerRequest {
     /// This message is sent when the server wants to set a new state to the game.
     /// Example: Pause state, intermission, ...
     ServerGameStateControl(ServerGameState),
+    PlayerActionLog(ClientStatistics),
 }
 
 /// The types of GameStates which a server can request a client to enter.
@@ -200,4 +201,13 @@ pub enum GameInput {
 
     Join,
     Exit,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, Eq, PartialOrd, Ord)]
+pub struct ClientStatistics {
+    pub uuid: Uuid,
+    pub name: String,
+    pub kills: u32,
+    pub deaths: u32,
+    pub score: u32,
 }

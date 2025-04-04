@@ -84,16 +84,6 @@ pub enum MapName {
     #[strum(to_string = "Islands")]
     /// The original map. Consists of one rectangluar brick in the middle.
     Islands(MapInstance),
-    Baszas,
-    Baszas2,
-    Baszas3,
-    Baszas4,
-    Baszas5,
-    Baszas6,
-    Baszas7,
-    Baszas8,
-    Baszas9,
-    Baszas10,
 }
 
 impl MapNameDiscriminants {

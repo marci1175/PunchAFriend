@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, net::SocketAddr, sync::Arc, time::Duration};
 
 use bevy::{ecs::system::ResMut, transform::components::Transform};
 use bevy_rapier2d::prelude::{
@@ -27,8 +27,7 @@ use crate::{
 };
 
 use super::{
-    write_to_buf_with_len, EndpointMetadata, OngoingGameData, RemoteClientGameRequest,
-    RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest,
+    write_to_buf_with_len, ClientStatistics, EndpointMetadata, OngoingGameData, RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest
 };
 
 #[derive(Debug, Clone)]
@@ -59,6 +58,8 @@ pub struct ServerInstance {
 
     pub client_tcp_receiver: Option<Receiver<(RemoteClientRequest, SocketAddr)>>,
 
+    pub connected_clients_stats: Arc<RwLock<BTreeSet<ClientStatistics>>>,
+    
     pub game_state: Arc<RwLock<ServerGameState>>,
 }
 
@@ -94,6 +95,7 @@ impl ServerInstance {
                         .unwrap(),
                 ),
             ))),
+            connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new()))
         })
     }
 }
@@ -123,6 +125,8 @@ pub fn setup_remote_client_handler(
 
     server_instance.client_tcp_receiver = Some(tcp_receiver);
     server_instance.client_udp_receiver = Some(receiver);
+
+    let connected_clients_stats = server_instance.connected_clients_stats.clone();
 
     // Spawn the incoming connection accepter thread
     tokio_runtime.spawn_background_task(move |mut ctx| async move {

@@ -185,6 +185,15 @@ pub fn handle_server_output(
                         }
                     }
                 }
+                punchafriend::networking::ServerRequest::PlayerActionLog(updated_stat_entry) => {
+                    let mut client_stats = client_connection.connected_clients_stats.write();
+
+                    if let Some(log_entry) = client_stats.iter().find(|stat| stat.uuid == updated_stat_entry.uuid).as_deref().cloned() {
+                        client_stats.remove(&log_entry.clone());
+
+                        client_stats.insert(updated_stat_entry);
+                    }
+                }
                 punchafriend::networking::ServerRequest::ServerGameStateControl(
                     game_state_control,
                 ) => match game_state_control {
@@ -223,9 +232,6 @@ pub fn handle_server_output(
                         // Despawn all of the existing players, to clear out players left from a different match
                         commands.entity(entity).despawn();
                     }
-
-                    // Set the window to be displaying game
-                    // app_ctx.ui_layer = UiLayer::Game();
 
                     // Set the client connection variable
                     app_ctx.client_connection = Some(client_connection);

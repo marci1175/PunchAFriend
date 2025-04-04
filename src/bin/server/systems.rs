@@ -426,3 +426,13 @@ pub fn setup_window(
 
     framerate.limiter = Limiter::from_framerate(120.);
 }
+
+pub fn check_players_out_of_bounds(
+    players: Query<(Entity, &Pawn, &Transform), Changed<Transform>>
+) {
+    for (_e, pawn, position) in players.iter() {
+        if position.translation.y < -200. {
+            // panic!();
+        }
+    }
+}

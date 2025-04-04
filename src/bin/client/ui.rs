@@ -97,11 +97,27 @@ pub fn ui_system(
                                         ui.label("K/D");
                                     });
                                 }).body(|body| {
-                                    body.rows(20., connection.connected_clients_stats.len(), |mut column| {
-                                        // column;
-                                        column.col(|ui| {
+                                    let client_stats = connection.connected_clients_stats.read().clone();
+                                    let mut client_stats_iter = client_stats.iter();
 
-                                        });
+                                    body.rows(20., connection.connected_clients_stats.read().len(), |mut column| {
+                                        if let Some(client) = client_stats_iter.next() {
+                                            column.col(|ui| {
+                                                ui.label(client.name.clone());
+                                            });
+                                            column.col(|ui| {
+                                                ui.label(format!("{}", client.kills));
+                                            });
+                                            column.col(|ui| {
+                                                ui.label(format!("{}", client.deaths));
+                                            });
+                                            column.col(|ui| {
+                                                ui.label(format!("{}", client.score));
+                                            });
+                                            column.col(|ui| {
+                                                ui.label(format!("{:.2}", client.kills as f32 / client.deaths as f32));
+                                            });
+                                        }
                                     });
                                 });
                             });

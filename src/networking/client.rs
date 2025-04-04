@@ -1,7 +1,8 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
 use dashmap::DashMap;
+use parking_lot::{Mutex, RwLock};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpStream, UdpSocket},
@@ -14,8 +15,7 @@ use uuid::Uuid;
 use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{
-    write_to_buf_with_len, EndpointMetadata, RemoteClientRequest, RemoteServerRequest,
-    ServerMetadata,
+    write_to_buf_with_len, ClientStatistics, EndpointMetadata, RemoteClientRequest, RemoteServerRequest, ServerMetadata
 };
 
 #[derive(Resource)]
@@ -30,7 +30,7 @@ pub struct ClientConnection {
 
     pub remote_server_sender: Sender<RemoteClientRequest>,
 
-    pub connected_clients_stats: Arc<DashMap<Uuid, ()>>,
+    pub connected_clients_stats: Arc<RwLock<BTreeSet<ClientStatistics>>>,
 }
 
 impl ClientConnection {
@@ -100,7 +100,7 @@ impl ClientConnection {
             server_tick_receiver: client_receiver,
             remote_receiver,
             remote_server_sender,
-            connected_clients_stats: Arc::new(DashMap::new())
+            connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new()))
         })
     }
 }
