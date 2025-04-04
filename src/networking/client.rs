@@ -1,6 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use bevy::ecs::system::Resource;
+use dashmap::DashMap;
 use tokio::{
     io::AsyncReadExt,
     net::{TcpStream, UdpSocket},
@@ -28,6 +29,8 @@ pub struct ClientConnection {
     pub remote_receiver: Receiver<RemoteServerRequest>,
 
     pub remote_server_sender: Sender<RemoteClientRequest>,
+
+    pub connected_clients_stats: Arc<DashMap<Uuid, ()>>,
 }
 
 impl ClientConnection {
@@ -97,6 +100,7 @@ impl ClientConnection {
             server_tick_receiver: client_receiver,
             remote_receiver,
             remote_server_sender,
+            connected_clients_stats: Arc::new(DashMap::new())
         })
     }
 }

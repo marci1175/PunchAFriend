@@ -251,7 +251,7 @@ pub fn handle_user_input(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     keyboard_input: Res<'_, ButtonInput<KeyCode>>,
 ) {
-    if !matches!(app_ctx.ui_layer, UiLayer::Game(_)) {
+    if !(matches!(app_ctx.ui_layer, UiLayer::Game(_)) || matches!(app_ctx.ui_layer, UiLayer::Intermission(_))) {
         return;
     }
 
@@ -259,6 +259,10 @@ pub fn handle_user_input(
     if keyboard_input.just_pressed(KeyCode::Escape) {
         app_ctx.ui_layer =
             UiLayer::PauseWindow((PauseWindowState::Main, Box::new(app_ctx.ui_layer.clone())));
+    }
+
+    if !matches!(app_ctx.ui_layer, UiLayer::Game(_)) {
+        return;
     }
 
     // Send the inputs to the sender thread

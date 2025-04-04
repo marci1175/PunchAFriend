@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bevy::{ecs::system::ResMut, time::Timer, transform::components::Transform};
+use bevy::{ecs::system::ResMut, transform::components::Transform};
 use bevy_rapier2d::prelude::{
     ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
     LockedAxes, RigidBody, Velocity,
@@ -55,9 +55,9 @@ pub struct ServerInstance {
 
     pub client_udp_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
 
-    pub connected_client_game_sockets: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
+    pub connected_client_tcp_handles: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
 
-    pub client_tcp_receiver: Option<Receiver<RemoteClientRequest>>,
+    pub client_tcp_receiver: Option<Receiver<(RemoteClientRequest, SocketAddr)>>,
 
     pub game_state: Arc<RwLock<ServerGameState>>,
 }
@@ -84,12 +84,14 @@ impl ServerInstance {
             tcp_listener_port,
             client_udp_receiver: None,
             metadata: EndpointMetadata::new(udp_socket_port),
-            connected_client_game_sockets: Arc::new(DashMap::new()),
+            connected_client_tcp_handles: Arc::new(DashMap::new()),
             client_tcp_receiver: None,
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
                 OngoingGameData::new(
                     MapInstance::map_flatground(),
-                    round_start_date.checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * 60))?).unwrap()
+                    round_start_date
+                        .checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * 60))?)
+                        .unwrap(),
                 ),
             ))),
         })
@@ -104,10 +106,10 @@ pub fn setup_remote_client_handler(
 ) {
     let tcp_listener = server_instance.tcp_listener.clone();
 
-    let client_game_socket_list = server_instance.connected_client_game_sockets.clone();
+    let client_game_socket_list = server_instance.connected_client_tcp_handles.clone();
 
     let (sender, receiver) = channel::<(RemoteClientGameRequest, SocketAddr)>(2000);
-    let (tcp_sender, tcp_receiver) = channel::<RemoteClientRequest>(2000);
+    let (tcp_sender, tcp_receiver) = channel::<(RemoteClientRequest, SocketAddr)>(2000);
 
     let cancellation_token_clone = cancellation_token.clone();
 
@@ -175,6 +177,8 @@ pub fn setup_remote_client_handler(
                         // Clone the TcpSender
                         let tcp_sender = tcp_sender.clone();
 
+                        let socket_addr = socket_addr;
+
                         // Create tcp listener
                         tokio::spawn(async move {
                             loop {
@@ -190,7 +194,7 @@ pub fn setup_remote_client_handler(
 
                                         let message = rmp_serde::from_slice::<RemoteClientRequest>(&buf).unwrap();
 
-                                        tcp_sender.send(message).await.unwrap();
+                                        tcp_sender.send((message, socket_addr)).await.unwrap();
                                     }
                                 }
                             }

@@ -1,7 +1,10 @@
+pub const MINUTE_SECS: u64 = 60;
+
 use chrono::{Local, TimeDelta};
 use punchafriend::{
     game::map::load_map_from_mapinstance,
     networking::{
+        server::ServerInstance,
         OngoingGameData,
         ServerGameState::{self, Intermission},
     },
@@ -20,7 +23,7 @@ use bevy::{
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::{Time, Timer},
+    time::{Real, Time, Timer},
     transform::components::Transform,
     winit::{UpdateMode, WinitSettings},
 };
@@ -58,7 +61,8 @@ pub fn recv_tick(
     mut rand: ResMut<RandomEngine>,
     runtime: ResMut<TokioTasksRuntime>,
     collision_groups: Res<CollisionGroupSet>,
-    time: Res<Time>,
+    game_time: Res<Time>,
+    real_time: Res<Time<Real>>,
     current_game_objects: Query<(Entity, &MapElement)>,
 ) {
     // Increment global tick counter
@@ -69,14 +73,14 @@ pub fn recv_tick(
 
     // Increment the round timer, to know when does this round finish
     if let Some(round_timer) = &mut app_ctx.game_round_timer {
-        round_timer.tick(time.delta());
+        round_timer.tick(real_time.delta());
     }
 
     // If there is a round timer check the state of it
     if let Some(round_timer) = app_ctx.game_round_timer.clone() {
         if round_timer.finished() {
             if let Some(instance) = &mut app_ctx.server_instance {
-                let client_list = instance.connected_client_game_sockets.clone();
+                let client_list = instance.connected_client_tcp_handles.clone();
 
                 let intermission_data = create_intermission_data_all();
 
@@ -91,8 +95,8 @@ pub fn recv_tick(
     }
 
     // If there is any existing intermission timer increment it
-    if let Some(timer) = &mut app_ctx.intermission_timer {
-        timer.tick(time.delta());
+    if let Some(intermission_timer) = &mut app_ctx.intermission_timer {
+        intermission_timer.tick(real_time.delta());
     }
 
     // If there is any existing intermission timer get the immutable state of it
@@ -108,23 +112,18 @@ pub fn recv_tick(
 
                     if let Some((voted_map_name, _vote_count)) = most_voted_entry {
                         let connected_client_list =
-                            server_instance.connected_client_game_sockets.clone();
+                            server_instance.connected_client_tcp_handles.clone();
 
                         let map_instance = voted_map_name.into_map_instance();
 
                         let map_instance_clone = map_instance.clone();
 
-                        runtime.spawn_background_task(async move |_task| {
-                            let round_start_date = Local::now().to_utc();
-                            
-                            // Iter over all the clients    
-                            for mut entry in connected_client_list.iter_mut() {
-                                let (_, write_half) = entry.value_mut();
-
-                                // Send the message to the client
-                                send_request_to_client(&mut write_half.lock(), RemoteServerRequest {request: punchafriend::networking::ServerRequest::ServerGameStateControl(punchafriend::networking::ServerGameState::OngoingGame(OngoingGameData::new(map_instance.clone(), round_start_date.checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * 60)).unwrap()).unwrap())))}).await.unwrap();
-                            }
-                        });
+                        notify_players_game_start(
+                            &runtime,
+                            connected_client_list,
+                            map_instance,
+                            server_instance,
+                        );
 
                         load_map_from_mapinstance(
                             map_instance_clone.clone(),
@@ -147,28 +146,59 @@ pub fn recv_tick(
         }
 
         if let Some(server_instance) = &mut app_ctx.server_instance {
+            // If there is a tcp_listener try receiving the messages sent by the sender thread
             if let Some(tcp_receiver) = &mut server_instance.client_tcp_receiver {
-                if let Ok(message) = tcp_receiver.try_recv() {
+                // Try receiving the message
+                if let Ok((message, socket_addr)) = tcp_receiver.try_recv() {
+                    //  Match the message type
                     match message.request {
                         punchafriend::networking::ClientRequest::Vote(
                             voted_map_name_discriminant,
-                        ) => match &mut *server_instance.game_state.clone().write() {
-                            punchafriend::networking::ServerGameState::Pause => {}
-                            punchafriend::networking::ServerGameState::Intermission(
-                                server_intermission_data,
-                            ) => {
-                                if let Some(idx) = server_intermission_data
-                                    .selectable_maps
-                                    .iter()
-                                    .position(|(map, _)| *map == voted_map_name_discriminant)
-                                {
-                                    server_intermission_data.selectable_maps[idx].1 += 1;
+                        ) => {
+                            // If the client has sent a message check the state of the server.
+                            match &mut *server_instance.game_state.clone().write() {
+                                punchafriend::networking::ServerGameState::Pause => {}
+                                punchafriend::networking::ServerGameState::Intermission(
+                                    server_intermission_data,
+                                ) => {
+                                    if let Some(idx) = server_intermission_data
+                                        .selectable_maps
+                                        .iter()
+                                        .position(|(map, _)| *map == voted_map_name_discriminant)
+                                    {
+                                        server_intermission_data.selectable_maps[idx].1 += 1;
+                                    }
                                 }
-                            }
-                            punchafriend::networking::ServerGameState::OngoingGame(
-                                _map_instance,
-                            ) => {}
-                        },
+                                punchafriend::networking::ServerGameState::OngoingGame(
+                                    ongoing_game_data,
+                                ) => {
+                                    let connected_client_tcp_handles =
+                                        server_instance.connected_client_tcp_handles.clone();
+
+                                    let socket_addr = socket_addr;
+                                    let ongoing_game_data = ongoing_game_data.clone();
+
+                                    runtime.spawn_background_task(async move |_ctx| {
+                                        if let Some(handle) = connected_client_tcp_handles
+                                            .get(&socket_addr)
+                                        {
+                                            let (_, tcp_write) = handle.value();
+                                            
+                                            send_request_to_client(
+                                                &mut tcp_write.lock(), 
+                                                RemoteServerRequest {
+                                                    request: punchafriend::networking::ServerRequest::ServerGameStateControl(
+                                                        punchafriend::networking::ServerGameState::OngoingGame(
+                                                            OngoingGameData::new(ongoing_game_data.current_map.clone(), ongoing_game_data.round_end_date)
+                                                        )
+                                                    )
+                                                }
+                                            ).await.unwrap();
+                                        }
+                                    });
+                                }
+                            };
+                        }
                     }
                 }
             }
@@ -179,7 +209,7 @@ pub fn recv_tick(
     if let Some(server_instance) = &mut app_ctx.server_instance {
         if let Some(remote_receiver) = &mut server_instance.client_udp_receiver {
             // Clone the connected clients list's handle
-            let connected_clients_clone = server_instance.connected_client_game_sockets.clone();
+            let connected_clients_clone = server_instance.connected_client_tcp_handles.clone();
 
             // Iter over all the packets from the clients
             while let Ok((client_req, address)) = remote_receiver.try_recv() {
@@ -199,7 +229,7 @@ pub fn recv_tick(
                             *action,
                             &collision_groups,
                             &mut rand.inner,
-                            &time,
+                            &game_time,
                         );
 
                         // If the client requested to disconnect we should broadcast the message to all of the clients
@@ -232,6 +262,52 @@ pub fn recv_tick(
             }
         }
     }
+}
+
+fn notify_players_game_start(
+    runtime: &ResMut<'_, TokioTasksRuntime>,
+    connected_client_list: Arc<
+        dashmap::DashMap<
+            std::net::SocketAddr,
+            (
+                uuid::Uuid,
+                Arc<parking_lot::lock_api::Mutex<parking_lot::RawMutex, OwnedWriteHalf>>,
+            ),
+        >,
+    >,
+    map_instance: punchafriend::game::map::MapInstance,
+    server_instance: &ServerInstance,
+) {
+    let round_end_date = Local::now()
+        .to_utc()
+        .checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * MINUTE_SECS)).unwrap())
+        .unwrap();
+
+    *server_instance.game_state.write() = ServerGameState::OngoingGame(OngoingGameData {
+        current_map: map_instance.clone(),
+        round_end_date,
+    });
+
+    runtime.spawn_background_task(async move |_task| {
+        // Iter over all the clients
+        for mut entry in connected_client_list.iter_mut() {
+            let (_, write_half) = entry.value_mut();
+
+            // Send the message to the client
+            send_request_to_client(
+                &mut write_half.lock(),
+                RemoteServerRequest {
+                    request: punchafriend::networking::ServerRequest::ServerGameStateControl(
+                        punchafriend::networking::ServerGameState::OngoingGame(
+                            OngoingGameData::new(map_instance.clone(), round_end_date),
+                        ),
+                    ),
+                },
+            )
+            .await
+            .unwrap();
+        }
+    });
 }
 
 fn notify_players_player_disconnect(
@@ -290,7 +366,7 @@ pub fn send_tick(
             let message_length_bytes = (message_bytes.len() as u32).to_be_bytes();
 
             // Iter over all of the connected clients
-            for client in server_instance.connected_client_game_sockets.iter() {
+            for client in server_instance.connected_client_tcp_handles.iter() {
                 // Fetch client socket address
                 let addr = *client.key();
 

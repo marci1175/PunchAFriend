@@ -179,6 +179,8 @@ pub struct Pawn {
     pub combo_stats: Option<Combo>,
 
     pub id: Uuid,
+
+    pub pawn_attributes: (PawnType, PawnAttribute),
 }
 
 impl Pawn {
@@ -213,7 +215,9 @@ impl Pawn {
     }
 }
 
+#[derive(Default, Clone, serde::Deserialize, serde::Serialize, Debug)]
 pub enum PawnType {
+    #[default]
     Knight,
     Ninja,
     Soldier,
@@ -221,10 +225,21 @@ pub enum PawnType {
     Schoolgirl,
 }
 
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
 pub struct PawnAttribute {
     pub speed: f32,
     pub jump_height: f32,
     pub attack_speed: f32,
+}
+
+impl Default for PawnAttribute {
+    fn default() -> Self {
+        Self {
+            speed: 1.,
+            jump_height: 1.,
+            attack_speed: 1.,
+        }
+    }
 }
 
 pub trait CustomAttack {

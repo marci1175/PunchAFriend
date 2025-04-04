@@ -32,19 +32,14 @@ pub enum PauseWindowState {
 }
 
 pub mod server {
-    use std::sync::Arc;
 
     use bevy::{ecs::system::Resource, time::Timer};
-    use parking_lot::RwLock;
 
     use rand::{rngs::SmallRng, SeedableRng};
     use tokio::sync::mpsc::{channel, Receiver};
     use tokio_util::sync::CancellationToken;
 
-    use crate::{
-        networking::server::{RemoteGameClient, ServerInstance},
-        UiLayer,
-    };
+    use crate::{networking::server::ServerInstance, UiLayer};
 
     #[derive(Default)]
     pub struct UiState {}
@@ -66,8 +61,6 @@ pub mod server {
 
         pub cancellation_token: CancellationToken,
 
-        pub client_list: Arc<RwLock<Vec<RemoteGameClient>>>,
-
         pub tick_count: u64,
 
         pub intermission_timer: Option<Timer>,
@@ -83,7 +76,6 @@ pub mod server {
                 server_instance_receiver: channel(255).1,
                 server_instance: None,
                 cancellation_token: CancellationToken::new(),
-                client_list: Arc::new(RwLock::new(vec![])),
                 tick_count: 0,
                 intermission_timer: None,
                 game_round_timer: None,

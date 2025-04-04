@@ -8,7 +8,7 @@ use bevy::{
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::{Time, Timer},
+    time::Timer,
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
@@ -31,6 +31,8 @@ use punchafriend::{
 use strum::VariantArray;
 use tokio::sync::mpsc::channel;
 
+use crate::systems::MINUTE_SECS;
+
 pub fn ui_system(
     mut contexts: EguiContexts,
     mut app_ctx: ResMut<ApplicationCtx>,
@@ -40,7 +42,6 @@ pub fn ui_system(
     collision_groups: Res<CollisionGroupSet>,
     current_map_objects: Query<(Entity, &MapElement)>,
     runtime: ResMut<TokioTasksRuntime>,
-    time: Res<Time>,
 ) {
     let ctx = contexts.ctx_mut();
 
@@ -59,7 +60,7 @@ pub fn ui_system(
                     ui.label(format!("Port: {}", inst.tcp_listener_port));
 
                     if ui.button("Set intermission state").clicked() {
-                        let dash_map = inst.connected_client_game_sockets.clone();
+                        let dash_map = inst.connected_client_tcp_handles.clone();
 
                         let intermission_data = create_intermission_data_all();
 
@@ -77,8 +78,6 @@ pub fn ui_system(
                     }
                 }
             });
-
-            // app_ctx.ui_mode = UiLayer::Game(ongoing_game_data.clone());
         }
         // Display main menu window.
         punchafriend::UiLayer::MainMenu => {
@@ -186,10 +185,10 @@ pub fn ui_system(
 
                 // Reset the round timer's state
                 app_ctx.game_round_timer = Some(Timer::new(
-                    Duration::from_secs(60 * 8),
+                    Duration::from_secs(MINUTE_SECS * 8),
                     bevy::time::TimerMode::Once,
                 ));
-                
+
                 drop(game_state);
 
                 // Initalize server threads
@@ -214,7 +213,10 @@ pub fn create_intermission_data_all() -> IntermissionData {
             .iter()
             .map(|map| (*map, 0))
             .collect::<Vec<(MapNameDiscriminants, usize)>>(),
-        Local::now().to_utc().checked_add_signed(TimeDelta::try_seconds(30).unwrap()).unwrap(),
+        Local::now()
+            .to_utc()
+            .checked_add_signed(TimeDelta::try_seconds(30).unwrap())
+            .unwrap(),
     );
     intermission_data
 }

@@ -1,5 +1,3 @@
-use std::fs;
-
 use bevy::{
     asset::{AssetId, Assets},
     ecs::{
@@ -19,7 +17,8 @@ use bevy_egui::{
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_tokio_tasks::TokioTasksRuntime;
 
-use chrono::{DateTime, Local};
+use chrono::Local;
+use egui_extras::{Column, StripBuilder, TableBuilder};
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Pawn},
@@ -57,7 +56,10 @@ pub fn ui_system(
     match app_ctx.ui_layer.clone() {
         UiLayer::Game(ongoing_game_data) => {
             // How much time is left from the round
-            let time_delta = ongoing_game_data.round_end_date.time().signed_duration_since(local_utc_time.time());
+            let time_delta = ongoing_game_data
+                .round_end_date
+                .time()
+                .signed_duration_since(local_utc_time.time());
 
             egui::Area::new("hud".into())
                 .anchor(Align2::CENTER_TOP, vec2(0., 20.))
@@ -70,6 +72,41 @@ pub fn ui_system(
 
             // Set the new value of the UiLayer's enum
             app_ctx.ui_layer = UiLayer::Game(ongoing_game_data.clone());
+
+                if let Some(connection) = &app_ctx.client_connection {
+                    if keyboard_input.pressed(KeyCode::Tab) {
+                        egui::Area::new("scoreboard".into())
+                            .anchor(Align2::CENTER_CENTER, vec2(0., 0.))
+                            .show(ctx, |ui| {
+                                let table = TableBuilder::new(ui).striped(true).cell_layout(Layout::left_to_right(egui::Align::Center));
+        
+                                table.header(20., |mut header| {
+                                    header.col(|ui| {
+                                        ui.label("Username");
+                                    });
+                                    header.col(|ui| {
+                                        ui.label("Kills");
+                                    });
+                                    header.col(|ui| {
+                                        ui.label("Deaths");
+                                    });
+                                    header.col(|ui| {
+                                        ui.label("Score");
+                                    });
+                                    header.col(|ui| {
+                                        ui.label("K/D");
+                                    });
+                                }).body(|body| {
+                                    body.rows(20., connection.connected_clients_stats.len(), |mut column| {
+                                        // column;
+                                        column.col(|ui| {
+
+                                        });
+                                    });
+                                });
+                            });
+                    }
+                }
         }
         UiLayer::Intermission(intermission_data) => {
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -84,45 +121,50 @@ pub fn ui_system(
 
                 Grid::new("map_grid").show(ui, |ui| {
                     // Iter over all the available maps
-                    for (map, vote_count) in &intermission_data.selectable_maps {
+                    for (map_idx, (map, vote_count)) in intermission_data.selectable_maps.iter().enumerate() {
                         // Display the group
-                        ui.group(|ui| {
-                            // Allocate ui
-                            ui.allocate_ui(vec2(100., 100.), |ui| {
-                                ui.vertical_centered(|ui| {
-                                    // Display the map's name
-                                    ui.horizontal(|ui| {
-                                        ui.label(RichText::from(map.to_string()).strong());
-                                        ui.label(RichText::from(vote_count.to_string()).strong());
-                                    });
-
-                                    // Display an image of the map
-                                    ui.image(egui::include_image!(
-                                        "../../../assets/map_imgs/test.png"
-                                    ));
-
-                                    // Show the vote button as available if the user hasnt voted yet.
-                                    ui.add_enabled_ui(!app_ctx.has_voted, |ui| {
-                                        // Show the button to vote
-                                        if ui.button("Vote").clicked() {
-                                            if let Some(client_connection) = &app_ctx.client_connection {
-                                                client_connection.remote_server_sender.try_send(RemoteClientRequest {
-                                                    id: client_connection.server_metadata.client_uuid,
-                                                    request: punchafriend::networking::ClientRequest::Vote(*map),
-                                                }).unwrap();
-                                            }
-
-                                            // Prevent the user for voting multiple times
-                                            app_ctx.has_voted = true;
-                                        };
+                            ui.group(|ui| {
+                                // Allocate ui
+                                ui.allocate_ui(vec2(100., 100.), |ui| {
+                                    ui.vertical_centered(|ui| {
+                                        // Display the map's name
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::from(map.to_string()).strong());
+                                            ui.label(RichText::from(vote_count.to_string()).strong());
+                                        });
+    
+                                        // Display an image of the map
+                                        ui.image(egui::include_image!(
+                                            "../../../assets/map_imgs/test.png"
+                                        ));
+    
+                                        // Show the vote button as available if the user hasnt voted yet.
+                                        ui.add_enabled_ui(!app_ctx.has_voted, |ui| {
+                                            // Show the button to vote
+                                            if ui.button("Vote").clicked() {
+                                                if let Some(client_connection) = &app_ctx.client_connection {
+                                                    client_connection.remote_server_sender.try_send(RemoteClientRequest {
+                                                        id: client_connection.server_metadata.client_uuid,
+                                                        request: punchafriend::networking::ClientRequest::Vote(*map),
+                                                    }).unwrap();
+                                                }
+    
+                                                // Prevent the user for voting multiple times
+                                                app_ctx.has_voted = true;
+                                            };
+                                        });
                                     });
                                 });
                             });
-                        });
 
-                        ui.end_row();
+                        // End the row every 5 maps
+                        if map_idx % 5 == 0 {
+                            ui.end_row();
+                        }
                     }
                 });
+
+                ui.separator();
             });
 
             // Set the innter value of the ui_layer
@@ -274,9 +316,12 @@ pub fn ui_system(
                             ui.label("Textures");
 
                             if ui.button("Reload all Textures").clicked() {
-                                for material in materials.iter().map(|(mat, _la)| {
-                                    mat.clone()
-                                }).collect::<Vec<AssetId<TextureAtlasLayout>>>().into_iter() {
+                                for material in materials
+                                    .iter()
+                                    .map(|(mat, _la)| mat)
+                                    .collect::<Vec<AssetId<TextureAtlasLayout>>>()
+                                    .into_iter()
+                                {
                                     materials.remove(material);
                                 }
                             }
