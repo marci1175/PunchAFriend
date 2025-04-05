@@ -2,10 +2,13 @@ pub const MINUTE_SECS: u64 = 60;
 
 use chrono::{Local, TimeDelta};
 use punchafriend::{
-    game::map::load_map_from_mapinstance,
+    game::{map::load_map_from_mapinstance, pawns::spawn_pawn},
     networking::{
-        server::ServerInstance,
-        OngoingGameData,
+        server::{
+            notify_client_about_player_stats_change, notify_clients_about_stats_change,
+            ServerInstance,
+        },
+        ClientStatistics, OngoingGameData,
         ServerGameState::{self, Intermission},
     },
 };
@@ -428,11 +431,54 @@ pub fn setup_window(
 }
 
 pub fn check_players_out_of_bounds(
-    players: Query<(Entity, &Pawn, &Transform), Changed<Transform>>
+    runtime: Res<TokioTasksRuntime>,
+    players: Query<(Entity, &Pawn, &Transform), Changed<Transform>>,
+    app_ctx: Res<ApplicationCtx>,
+    mut commands: Commands,
+    collision_groups: Res<CollisionGroupSet>,
 ) {
-    for (_e, pawn, position) in players.iter() {
-        if position.translation.y < -200. {
-            // panic!();
+    // Check if there is a server running currently
+    if let Some(server_instance) = &app_ctx.server_instance {
+        // Iter over the list of players
+        for (e, pawn, position) in players.iter() {
+            // Check if the player contained in the query is out of bounds
+            if position.translation.y < -300. {
+                let mut client_stats_list_handle = server_instance.connected_clients_stats.write();
+                for mut client in client_stats_list_handle
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<ClientStatistics>>()
+                {
+                    // Find the matching uuid
+                    if client.uuid == pawn.id {
+                        // Remove the original entry
+                        client_stats_list_handle.remove(&client.clone());
+
+                        // Modify the entry
+                        client.deaths += 1;
+
+                        // Re-insert the entry
+                        client_stats_list_handle.insert(client.clone());
+
+                        // Clone the list handle
+                        let connected_clients_clone =
+                            server_instance.connected_client_tcp_handles.clone();
+
+                        // Create an async task
+                        runtime.spawn_background_task(async move |_ctx| {
+                            // Notify all the clients about the new entry
+                            notify_clients_about_stats_change(client, connected_clients_clone)
+                                .await;
+                        });
+
+                        // Despawn pawn which has fallen off
+                        commands.entity(e).despawn();
+
+                        // Respawn the pawn
+                        spawn_pawn(&mut commands, pawn.id.clone(), collision_groups.pawn);
+                    }
+                }
+            }
         }
     }
 }

@@ -11,7 +11,7 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_egui::{
-    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
+    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, Rect, RichText, Sense, Slider},
     EguiContexts,
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
@@ -73,56 +73,80 @@ pub fn ui_system(
             // Set the new value of the UiLayer's enum
             app_ctx.ui_layer = UiLayer::Game(ongoing_game_data.clone());
 
-                if let Some(connection) = &app_ctx.client_connection {
-                    if keyboard_input.pressed(KeyCode::Tab) {
-                        egui::Area::new("scoreboard".into())
-                            .anchor(Align2::CENTER_CENTER, vec2(0., 0.))
-                            .show(ctx, |ui| {
-                                let table = TableBuilder::new(ui).striped(true).cell_layout(Layout::left_to_right(egui::Align::Center));
-        
-                                table.header(20., |mut header| {
-                                    header.col(|ui| {
-                                        ui.label("Username");
-                                    });
-                                    header.col(|ui| {
-                                        ui.label("Kills");
-                                    });
-                                    header.col(|ui| {
-                                        ui.label("Deaths");
-                                    });
-                                    header.col(|ui| {
-                                        ui.label("Score");
-                                    });
-                                    header.col(|ui| {
-                                        ui.label("K/D");
-                                    });
-                                }).body(|body| {
-                                    let client_stats = connection.connected_clients_stats.read().clone();
-                                    let mut client_stats_iter = client_stats.iter();
+            if keyboard_input.pressed(KeyCode::Tab) {
+                let leaderboard_area = egui::Area::new("scoreboard".into())
+                    .anchor(Align2::CENTER_CENTER, vec2(0., 0.))
+                    .show(ctx, |ui| {
+                        if let Some(connection) = &app_ctx.client_connection {
+                            ui.painter().rect_filled(
+                                app_ctx.ui_state.leaderboard_rect,
+                                3.,
+                                Color32::from_black_alpha(210),
+                            );
 
-                                    body.rows(20., connection.connected_clients_stats.read().len(), |mut column| {
-                                        if let Some(client) = client_stats_iter.next() {
-                                            column.col(|ui| {
-                                                ui.label(client.name.clone());
-                                            });
-                                            column.col(|ui| {
-                                                ui.label(format!("{}", client.kills));
-                                            });
-                                            column.col(|ui| {
-                                                ui.label(format!("{}", client.deaths));
-                                            });
-                                            column.col(|ui| {
-                                                ui.label(format!("{}", client.score));
-                                            });
-                                            column.col(|ui| {
-                                                ui.label(format!("{:.2}", client.kills as f32 / client.deaths as f32));
-                                            });
-                                        }
+                            let leaderbaord_area = ui.group(|ui| {
+                                let table = TableBuilder::new(ui)
+                                    .striped(true)
+                                    .columns(Column::auto(), 5)
+                                    .cell_layout(Layout::left_to_right(egui::Align::Center));
+
+                                table
+                                    .header(20., |mut header| {
+                                        header.col(|ui| {
+                                            ui.label("Username");
+                                        });
+                                        header.col(|ui| {
+                                            ui.label("Kills");
+                                        });
+                                        header.col(|ui| {
+                                            ui.label("Deaths");
+                                        });
+                                        header.col(|ui| {
+                                            ui.label("Score");
+                                        });
+                                        header.col(|ui| {
+                                            ui.label("K/D");
+                                        });
+                                    })
+                                    .body(|body| {
+                                        let client_stats =
+                                            connection.connected_clients_stats.read().clone();
+                                        let mut client_stats_iter = client_stats.iter();
+
+                                        body.rows(
+                                            20.,
+                                            connection.connected_clients_stats.read().len(),
+                                            |mut column| {
+                                                if let Some(client) = client_stats_iter.next() {
+                                                    column.col(|ui| {
+                                                        ui.label(client.name.clone());
+                                                    });
+                                                    column.col(|ui| {
+                                                        ui.label(format!("{}", client.kills));
+                                                    });
+                                                    column.col(|ui| {
+                                                        ui.label(format!("{}", client.deaths));
+                                                    });
+                                                    column.col(|ui| {
+                                                        ui.label(format!("{}", client.score));
+                                                    });
+                                                    column.col(|ui| {
+                                                        ui.label(format!(
+                                                            "{:.2}",
+                                                            client.kills as f32
+                                                                / client.deaths as f32
+                                                        ));
+                                                    });
+                                                }
+                                            },
+                                        );
                                     });
-                                });
                             });
-                    }
-                }
+                        }
+                    });
+
+                app_ctx.ui_state.leaderboard_rect = leaderboard_area.response.rect;
+            }
         }
         UiLayer::Intermission(intermission_data) => {
             egui::CentralPanel::default().show(ctx, |ui| {

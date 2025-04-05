@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use bevy::transform::components::Transform;
 use bevy_rapier2d::prelude::Velocity;
 use chrono::{DateTime, Utc};
@@ -52,7 +54,7 @@ pub enum ServerRequest {
     /// This message is sent when the server wants to set a new state to the game.
     /// Example: Pause state, intermission, ...
     ServerGameStateControl(ServerGameState),
-    PlayerActionLog(ClientStatistics),
+    PlayerStatisticsChange(ClientStatistics),
 }
 
 /// The types of GameStates which a server can request a client to enter.
@@ -203,11 +205,61 @@ pub enum GameInput {
     Exit,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, Eq, Ord, Default)]
 pub struct ClientStatistics {
     pub uuid: Uuid,
     pub name: String,
     pub kills: u32,
     pub deaths: u32,
     pub score: u32,
+}
+
+impl ClientStatistics {
+    pub fn new(uuid: Uuid) -> Self {
+        Self {
+            uuid,
+            ..Default::default()
+        }
+    }
+}
+
+impl PartialOrd for ClientStatistics {
+    fn gt(&self, other: &Self) -> bool {
+        self.kills > other.kills
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.kills < other.kills
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        self.kills >= other.kills
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        self.kills <= other.kills
+    }
+
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // First, compare by kills
+        match self.kills.partial_cmp(&other.kills) {
+            Some(Ordering::Equal) => {
+                // If kills are equal, compare by score
+                match self.score.partial_cmp(&other.score) {
+                    Some(Ordering::Equal) => {
+                        // If score is also equal, compare by deaths
+                        match self.deaths.partial_cmp(&other.deaths) {
+                            Some(Ordering::Equal) => {
+                                // If deaths are equal, compare by uuid (as a last resort)
+                                self.uuid.partial_cmp(&other.uuid)
+                            }
+                            other => other,
+                        }
+                    }
+                    other => other,
+                }
+            }
+            other => other,
+        }
+    }
 }

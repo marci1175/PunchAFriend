@@ -15,7 +15,8 @@ use uuid::Uuid;
 use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{
-    write_to_buf_with_len, ClientStatistics, EndpointMetadata, RemoteClientRequest, RemoteServerRequest, ServerMetadata
+    write_to_buf_with_len, ClientStatistics, EndpointMetadata, RemoteClientRequest,
+    RemoteServerRequest, ServerMetadata,
 };
 
 #[derive(Resource)]
@@ -100,7 +101,7 @@ impl ClientConnection {
             server_tick_receiver: client_receiver,
             remote_receiver,
             remote_server_sender,
-            connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new()))
+            connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new())),
         })
     }
 }

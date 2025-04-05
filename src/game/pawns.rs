@@ -5,7 +5,10 @@ use bevy::{
     time::Time,
     transform::components::Transform,
 };
-use bevy_rapier2d::prelude::{Collider, KinematicCharacterController, Velocity};
+use bevy_rapier2d::prelude::{
+    ActiveEvents, AdditionalMassProperties, Ccd, Collider, CollisionGroups,
+    KinematicCharacterController, LockedAxes, RigidBody, Velocity,
+};
 use rand::rngs::SmallRng;
 use std::time::Duration;
 use uuid::Uuid;
@@ -59,7 +62,7 @@ pub fn player_movement(
 
     // If the user presses W we the entity should jump, and subtract 1 from the jumps_remaining counter.
     // If there are no more jumps remaining the user needs to wait until they touch a MapObject again. This indicates they've landed.
-    if *game_input == GameInput::MoveJump && dbg!(player.jumps_remaining) != 0 {
+    if *game_input == GameInput::MoveJump && player.jumps_remaining != 0 {
         commands.entity(entity).insert(Velocity {
             linvel: vec2(0., 500.),
             angvel: 0.5,
@@ -170,8 +173,6 @@ pub struct Pawn {
     /// When an effect has expired, it will automaticly be removed from this list.
     pub effects: Vec<Effect>,
 
-    pub name: String,
-
     pub jumps_remaining: u8,
 
     pub direction: Direction,
@@ -244,4 +245,22 @@ impl Default for PawnAttribute {
 
 pub trait CustomAttack {
     fn spawn_attack(&self, commands: Commands);
+}
+
+pub fn spawn_pawn(commands: &mut Commands, uuid: Uuid, collision_group: CollisionGroups) {
+    commands
+        .spawn(RigidBody::Dynamic)
+        .insert(Collider::cuboid(20.0, 30.0))
+        .insert(Transform::from_xyz(0., 100., 0.))
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(LockedAxes::ROTATION_LOCKED)
+        .insert(AdditionalMassProperties::Mass(0.1))
+        .insert(KinematicCharacterController {
+            apply_impulse_to_dynamic_bodies: false,
+            ..Default::default()
+        })
+        .insert(collision_group)
+        .insert(Ccd::enabled())
+        .insert(Velocity::default())
+        .insert(Pawn::new_from_id(uuid));
 }

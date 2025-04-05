@@ -22,12 +22,17 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    game::{collision::CollisionGroupSet, map::MapInstance, pawns::Pawn},
+    game::{
+        collision::CollisionGroupSet,
+        map::MapInstance,
+        pawns::{spawn_pawn, Pawn},
+    },
     networking::{GameInput, RemoteClientRequest, UDP_DATAGRAM_SIZE},
 };
 
 use super::{
-    write_to_buf_with_len, ClientStatistics, EndpointMetadata, OngoingGameData, RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest
+    write_to_buf_with_len, ClientStatistics, EndpointMetadata, OngoingGameData,
+    RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest,
 };
 
 #[derive(Debug, Clone)]
@@ -59,7 +64,7 @@ pub struct ServerInstance {
     pub client_tcp_receiver: Option<Receiver<(RemoteClientRequest, SocketAddr)>>,
 
     pub connected_clients_stats: Arc<RwLock<BTreeSet<ClientStatistics>>>,
-    
+
     pub game_state: Arc<RwLock<ServerGameState>>,
 }
 
@@ -95,7 +100,7 @@ impl ServerInstance {
                         .unwrap(),
                 ),
             ))),
-            connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new()))
+            connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new())),
         })
     }
 }
@@ -144,6 +149,7 @@ pub fn setup_remote_client_handler(
 
                     let (mut read_half, mut write_half) = tcp_stream.into_split();
 
+                    
                     // Exchange metadata between client and server
                     if let Ok(client_metadata) = exchange_metadata(&mut read_half, &mut write_half, metadata.into_server_metadata(uuid)).await {
                         // Send the server's game state
@@ -153,20 +159,7 @@ pub fn setup_remote_client_handler(
                         ctx.run_on_main_thread(move |main_ctx| {
                             let mut worlds_commands = main_ctx.world.commands();
 
-                            worlds_commands.spawn(RigidBody::Dynamic)
-                            .insert(Collider::cuboid(20.0, 30.0))
-                            .insert(Transform::from_xyz(0., 100., 0.))
-                            .insert(ActiveEvents::COLLISION_EVENTS)
-                            .insert(LockedAxes::ROTATION_LOCKED)
-                            .insert(AdditionalMassProperties::Mass(0.1))
-                            .insert(KinematicCharacterController {
-                                apply_impulse_to_dynamic_bodies: false,
-                                ..Default::default()
-                            })
-                            .insert(collision_groups.player)
-                            .insert(Ccd::enabled())
-                            .insert(Velocity::default())
-                            .insert(Pawn::new_from_id(uuid)); 
+                            spawn_pawn(&mut worlds_commands, uuid, collision_groups.pawn);
                         }).await;
 
                         // Save the connected clients handle and ports
@@ -177,6 +170,15 @@ pub fn setup_remote_client_handler(
                         
                         // Clone the cancellation token
                         let cancellation_token_clone = cancellation_token_clone.clone();
+                        
+                        // Create the new stats field
+                        let new_statistics_field = ClientStatistics::new(uuid.clone());
+
+                        // Create a new field in the Statistics list
+                        connected_clients_stats.write().insert(new_statistics_field.clone());
+
+                        // Notify all the clients about the new field
+                        notify_clients_about_stats_change(new_statistics_field, connected_clients_clone.clone()).await;
 
                         // Clone the TcpSender
                         let tcp_sender = tcp_sender.clone();
@@ -307,4 +309,41 @@ pub async fn send_request_to_client(
     write_to_buf_with_len(tcp_stream, &rmp_serde::to_vec(&message)?).await?;
 
     Ok(())
+}
+
+pub async fn notify_client_about_player_stats_change(
+    write_half: &mut OwnedWriteHalf,
+    new_client_stats: ClientStatistics,
+) -> anyhow::Result<()> {
+    let message = RemoteServerRequest {
+        request: ServerRequest::PlayerStatisticsChange(new_client_stats),
+    };
+
+    write_to_buf_with_len(write_half, &rmp_serde::to_vec(&message)?).await?;
+
+    Ok(())
+}
+
+pub async fn notify_clients_about_stats_change(
+    client: ClientStatistics,
+    connected_clients_clone: Arc<
+        dashmap::DashMap<
+            std::net::SocketAddr,
+            (
+                uuid::Uuid,
+                Arc<parking_lot::lock_api::Mutex<parking_lot::RawMutex, OwnedWriteHalf>>,
+            ),
+        >,
+    >,
+) {
+    // Get the connected clients list
+    for connected_client in connected_clients_clone.iter_mut() {
+        // Get the handle of the TcpStream established when the client was connecting to the server
+        let (_, tcp_stream) = connected_client.value();
+
+        // Send statstics update message on the TcpStream specified
+        notify_client_about_player_stats_change(&mut tcp_stream.lock(), client.clone())
+            .await
+            .unwrap();
+    }
 }

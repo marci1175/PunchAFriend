@@ -32,7 +32,7 @@ pub struct CollisionGroupSet {
     /// Collides with all
     pub map_object: CollisionGroups,
     /// Collides with everything except SelfCharacter
-    pub player: CollisionGroups,
+    pub pawn: CollisionGroups,
     /// Collides with MapObject & ForeignCharacter, not SelfCharacter
     pub attack_obj: CollisionGroups,
 }
@@ -50,7 +50,7 @@ impl CollisionGroupSet {
                 Group::from_bits_truncate(CollisionGroup::MapObject as u32),
                 Group::from_bits_truncate(0b1111),
             ),
-            player: CollisionGroups::new(
+            pawn: CollisionGroups::new(
                 Group::from_bits_truncate(CollisionGroup::ForeignCharacter as u32),
                 Group::from_bits_truncate(
                     CollisionGroup::MapObject as u32 | CollisionGroup::AttackObj as u32,

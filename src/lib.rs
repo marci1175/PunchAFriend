@@ -87,6 +87,7 @@ pub mod server {
 pub mod client {
     use std::path::PathBuf;
 
+    use bevy_egui::egui::Rect;
     use tokio::sync::mpsc::Sender;
 
     use bevy::{asset::Handle, ecs::system::Resource, sprite::TextureAtlasLayout};
@@ -99,11 +100,21 @@ pub mod client {
 
     use crate::{networking::client::ClientConnection, UiLayer};
 
-    #[derive(Default, serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize)]
     pub struct UiState {
         pub connect_to_address: String,
-
+        pub leaderboard_rect: Rect,
         pub current_resource_pack: Option<PathBuf>,
+    }
+
+    impl Default for UiState {
+        fn default() -> Self {
+            Self {
+                connect_to_address: String::new(),
+                leaderboard_rect: Rect::NOTHING,
+                current_resource_pack: None,
+            }
+        }
     }
 
     #[derive(Resource, serde::Serialize, serde::Deserialize)]

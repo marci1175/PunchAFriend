@@ -140,7 +140,7 @@ pub fn handle_server_output(
                     .insert(AdditionalMassProperties::Mass(0.1))
                     .insert(ActiveEvents::COLLISION_EVENTS)
                     .insert(LockedAxes::ROTATION_LOCKED)
-                    .insert(collision_groups.player)
+                    .insert(collision_groups.pawn)
                     .insert(Velocity::default())
                     .insert(UniqueLastTickCount::new(0))
                     .insert(Ccd::enabled())
@@ -185,12 +185,21 @@ pub fn handle_server_output(
                         }
                     }
                 }
-                punchafriend::networking::ServerRequest::PlayerActionLog(updated_stat_entry) => {
+                punchafriend::networking::ServerRequest::PlayerStatisticsChange(
+                    updated_stat_entry,
+                ) => {
                     let mut client_stats = client_connection.connected_clients_stats.write();
 
-                    if let Some(log_entry) = client_stats.iter().find(|stat| stat.uuid == updated_stat_entry.uuid).as_deref().cloned() {
+                    if let Some(log_entry) = client_stats
+                        .iter()
+                        .find(|stat| stat.uuid == updated_stat_entry.uuid)
+                        .as_deref()
+                        .cloned()
+                    {
                         client_stats.remove(&log_entry.clone());
 
+                        client_stats.insert(updated_stat_entry);
+                    } else {
                         client_stats.insert(updated_stat_entry);
                     }
                 }
@@ -257,7 +266,9 @@ pub fn handle_user_input(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
     keyboard_input: Res<'_, ButtonInput<KeyCode>>,
 ) {
-    if !(matches!(app_ctx.ui_layer, UiLayer::Game(_)) || matches!(app_ctx.ui_layer, UiLayer::Intermission(_))) {
+    if !(matches!(app_ctx.ui_layer, UiLayer::Game(_))
+        || matches!(app_ctx.ui_layer, UiLayer::Intermission(_)))
+    {
         return;
     }
 
