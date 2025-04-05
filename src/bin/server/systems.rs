@@ -4,10 +4,7 @@ use chrono::{Local, TimeDelta};
 use punchafriend::{
     game::{map::load_map_from_mapinstance, pawns::spawn_pawn},
     networking::{
-        server::{
-            notify_client_about_player_stats_change, notify_clients_about_stats_change,
-            ServerInstance,
-        },
+        server::{notify_clients_about_stats_change, ServerInstance},
         ClientStatistics, OngoingGameData,
         ServerGameState::{self, Intermission},
     },
@@ -475,7 +472,7 @@ pub fn check_players_out_of_bounds(
                         commands.entity(e).despawn();
 
                         // Respawn the pawn
-                        spawn_pawn(&mut commands, pawn.id.clone(), collision_groups.pawn);
+                        spawn_pawn(&mut commands, pawn.id, collision_groups.pawn);
                     }
                 }
             }

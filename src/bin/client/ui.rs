@@ -11,14 +11,14 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_egui::{
-    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, Rect, RichText, Sense, Slider},
+    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
     EguiContexts,
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_tokio_tasks::TokioTasksRuntime;
 
 use chrono::Local;
-use egui_extras::{Column, StripBuilder, TableBuilder};
+use egui_extras::{Column, TableBuilder};
 use punchafriend::{
     client::ApplicationCtx,
     game::{collision::CollisionGroupSet, pawns::Pawn},

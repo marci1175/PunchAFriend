@@ -193,7 +193,6 @@ pub fn handle_server_output(
                     if let Some(log_entry) = client_stats
                         .iter()
                         .find(|stat| stat.uuid == updated_stat_entry.uuid)
-                        .as_deref()
                         .cloned()
                     {
                         client_stats.remove(&log_entry.clone());

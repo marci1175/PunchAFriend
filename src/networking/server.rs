@@ -1,10 +1,6 @@
 use std::{collections::BTreeSet, net::SocketAddr, sync::Arc, time::Duration};
 
-use bevy::{ecs::system::ResMut, transform::components::Transform};
-use bevy_rapier2d::prelude::{
-    ActiveEvents, AdditionalMassProperties, Ccd, Collider, KinematicCharacterController,
-    LockedAxes, RigidBody, Velocity,
-};
+use bevy::ecs::system::ResMut;
 use bevy_tokio_tasks::TokioTasksRuntime;
 use chrono::{Local, TimeDelta};
 use dashmap::DashMap;
@@ -22,11 +18,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    game::{
-        collision::CollisionGroupSet,
-        map::MapInstance,
-        pawns::{spawn_pawn, Pawn},
-    },
+    game::{collision::CollisionGroupSet, map::MapInstance, pawns::spawn_pawn},
     networking::{GameInput, RemoteClientRequest, UDP_DATAGRAM_SIZE},
 };
 
@@ -172,7 +164,7 @@ pub fn setup_remote_client_handler(
                         let cancellation_token_clone = cancellation_token_clone.clone();
                         
                         // Create the new stats field
-                        let new_statistics_field = ClientStatistics::new(uuid.clone());
+                        let new_statistics_field = ClientStatistics::new(uuid);
 
                         // Create a new field in the Statistics list
                         connected_clients_stats.write().insert(new_statistics_field.clone());
