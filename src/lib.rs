@@ -64,6 +64,9 @@ pub mod server {
         pub tick_count: u64,
 
         pub intermission_timer: Option<Timer>,
+        
+        pub intermission_total_votes: usize,
+
         pub game_round_timer: Option<Timer>,
     }
 
@@ -79,6 +82,7 @@ pub mod server {
                 tick_count: 0,
                 intermission_timer: None,
                 game_round_timer: None,
+                intermission_total_votes: 0,
             }
         }
     }

@@ -13,7 +13,7 @@ use rand::rngs::SmallRng;
 use std::time::Duration;
 use uuid::Uuid;
 
-use super::combat::{spawn_attack, Combo, Effect, EffectType};
+use super::{collision::LastInteractedPawn, combat::{spawn_attack, Combo, Effect, EffectType}};
 
 /// This function modifies the direction variable of the `LocalPlayer`, the variable is always the key last pressed by the user.
 pub fn set_movement_direction_var(game_input: &GameInput, local_player: &mut Mut<'_, Pawn>) {
@@ -262,5 +262,6 @@ pub fn spawn_pawn(commands: &mut Commands, uuid: Uuid, collision_group: Collisio
         .insert(collision_group)
         .insert(Ccd::enabled())
         .insert(Velocity::default())
+        .insert(LastInteractedPawn::default())
         .insert(Pawn::new_from_id(uuid));
 }

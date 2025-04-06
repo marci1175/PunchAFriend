@@ -170,7 +170,7 @@ pub fn setup_remote_client_handler(
                         connected_clients_stats.write().insert(new_statistics_field.clone());
 
                         // Notify all the clients about the new field
-                        notify_clients_about_stats_change(new_statistics_field, connected_clients_clone.clone()).await;
+                        notify_clients_about_stats_changes(vec![new_statistics_field], connected_clients_clone.clone()).await;
 
                         // Clone the TcpSender
                         let tcp_sender = tcp_sender.clone();
@@ -303,12 +303,12 @@ pub async fn send_request_to_client(
     Ok(())
 }
 
-pub async fn notify_client_about_player_stats_change(
+pub async fn notify_client_about_player_stats_changes(
     write_half: &mut OwnedWriteHalf,
-    new_client_stats: ClientStatistics,
+    new_clients_stats: Vec<ClientStatistics>,
 ) -> anyhow::Result<()> {
     let message = RemoteServerRequest {
-        request: ServerRequest::PlayerStatisticsChange(new_client_stats),
+        request: ServerRequest::PlayersStatisticsChange(new_clients_stats),
     };
 
     write_to_buf_with_len(write_half, &rmp_serde::to_vec(&message)?).await?;
@@ -316,8 +316,8 @@ pub async fn notify_client_about_player_stats_change(
     Ok(())
 }
 
-pub async fn notify_clients_about_stats_change(
-    client: ClientStatistics,
+pub async fn notify_clients_about_stats_changes(
+    clients: Vec<ClientStatistics>,
     connected_clients_clone: Arc<
         dashmap::DashMap<
             std::net::SocketAddr,
@@ -334,7 +334,7 @@ pub async fn notify_clients_about_stats_change(
         let (_, tcp_stream) = connected_client.value();
 
         // Send statstics update message on the TcpStream specified
-        notify_client_about_player_stats_change(&mut tcp_stream.lock(), client.clone())
+        notify_client_about_player_stats_changes(&mut tcp_stream.lock(), clients.clone())
             .await
             .unwrap();
     }

@@ -12,7 +12,7 @@ use bevy::{
     },
     input::{keyboard::KeyCode, ButtonInput},
     math::UVec2,
-    render::mesh::Mesh,
+    render::{camera::OrthographicProjection, mesh::Mesh},
     sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout},
     time::{Time, Timer},
     transform::components::Transform,
@@ -185,21 +185,23 @@ pub fn handle_server_output(
                         }
                     }
                 }
-                punchafriend::networking::ServerRequest::PlayerStatisticsChange(
-                    updated_stat_entry,
+                punchafriend::networking::ServerRequest::PlayersStatisticsChange(
+                    updated_stat_entries,
                 ) => {
                     let mut client_stats = client_connection.connected_clients_stats.write();
 
-                    if let Some(log_entry) = client_stats
-                        .iter()
-                        .find(|stat| stat.uuid == updated_stat_entry.uuid)
-                        .cloned()
-                    {
-                        client_stats.remove(&log_entry.clone());
+                    for updated_stat_entry in updated_stat_entries {
+                            if let Some(log_entry) = client_stats
+                            .iter()
+                            .find(|stat| stat.uuid == updated_stat_entry.uuid)
+                            .cloned()
+                        {
+                            client_stats.remove(&log_entry.clone());
 
-                        client_stats.insert(updated_stat_entry);
-                    } else {
-                        client_stats.insert(updated_stat_entry);
+                            client_stats.insert(updated_stat_entry);
+                        } else {
+                            client_stats.insert(updated_stat_entry);
+                        }
                     }
                 }
                 punchafriend::networking::ServerRequest::ServerGameStateControl(
@@ -347,8 +349,10 @@ pub fn setup_game(
     framerate: ResMut<FramepaceSettings>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
 ) {
+    let camera = Camera2d::default();
+
     // Setup graphics
-    commands.spawn(Camera2d);
+    commands.spawn(camera);
 
     commands
         .spawn(Collider::cuboid(500.0, 10.0))

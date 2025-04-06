@@ -54,7 +54,7 @@ pub enum ServerRequest {
     /// This message is sent when the server wants to set a new state to the game.
     /// Example: Pause state, intermission, ...
     ServerGameStateControl(ServerGameState),
-    PlayerStatisticsChange(ClientStatistics),
+    PlayersStatisticsChange(Vec<ClientStatistics>),
 }
 
 /// The types of GameStates which a server can request a client to enter.

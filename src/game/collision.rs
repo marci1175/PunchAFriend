@@ -2,23 +2,35 @@ use std::time::Duration;
 
 use bevy::{
     ecs::{
-        entity::Entity,
-        event::EventReader,
-        query::With,
-        system::{Commands, Query, Resource},
+        component::Component, entity::Entity, event::EventReader, query::{Changed, With}, system::{Commands, Query, Res, Resource}
     },
     math::vec2,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{CollisionGroups, Group, Velocity};
+use bevy_tokio_tasks::TokioTasksRuntime;
+use uuid::Uuid;
 
-use crate::Direction;
+use crate::{networking::{server::notify_clients_about_stats_changes, ClientStatistics}, server::ApplicationCtx, Direction};
 
 use super::{
     combat::{AttackObject, AttackType, Combo},
     map::MapElement,
-    pawns::Pawn,
+    pawns::{spawn_pawn, Pawn},
 };
+
+#[derive(Component, Debug, Clone, Default)]
+pub struct LastInteractedPawn(Option<Uuid>);
+
+impl LastInteractedPawn {
+    pub fn set_last_pawn(&mut self, uuid: Uuid) {
+        self.0 = Some(uuid);
+    }
+
+    pub fn get_inner(&self) -> &Option<Uuid> {
+        &self.0
+    }
+}
 
 #[repr(u32)]
 pub enum CollisionGroup {
@@ -120,7 +132,7 @@ pub fn check_for_collision_with_map_and_player(
 pub fn check_for_collision_with_attack_object(
     mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
-    mut foreign_character_query: Query<(Entity, &mut Pawn, &Transform, &Velocity)>,
+    mut character_query: Query<(Entity, &mut Pawn, &Transform, &Velocity, &mut LastInteractedPawn)>,
     attack_object_query: Query<(Entity, &AttackObject)>,
 ) {
     for collision in collision_events.read() {
@@ -134,54 +146,59 @@ pub fn check_for_collision_with_attack_object(
                     .iter()
                     .find(|(attck_ent, _)| *attck_ent == *entity || *attck_ent == *entity1);
 
-                let foreign_character_query_result = foreign_character_query
+                let character_query_result = character_query
                     .iter_mut()
-                    .find(|(foreign_character_entity, _, _, _)| {
-                        *foreign_character_entity == *entity
-                            || *foreign_character_entity == *entity1
+                    .find(|(character_entity, _, _, _, _)| {
+                        *character_entity == *entity
+                            || *character_entity == *entity1
                     })
-                    .map(|(e, p, t, v)| (e, p.clone(), *t, *v));
+                    .map(|(e, p, t, v, lp)| (e, p.clone(), *t, *v, lp));
+
+                let mut attacker_uuid: Option<Uuid> = None;
 
                 if let (
                     Some((_attack_ent, attack_object)),
                     Some((
-                        foreign_entity,
-                        _local_player,
+                        attacked_entity,
+                        attacked_pawn,
                         foreign_char_transform,
                         foreign_char_velocity,
+                        last_interacted_pawn,
                     )),
-                ) = (attack_obj_query_result, foreign_character_query_result)
+                ) = (attack_obj_query_result, &character_query_result)
                 {
                     // We should not apply any forces if the attack hit the player who has spawned the original attack.
-                    if attack_object.attack_by == foreign_entity {
+                    if attack_object.attack_by == *attacked_entity {
                         continue;
                     }
 
-                    let mut colliding_entity_commands = commands.entity(foreign_entity);
+                    let mut colliding_entity_commands = commands.entity(*attacked_entity);
 
                     let attacker_origin_pos = attack_object.attack_origin.translation;
-                    let foreign_char_pos = foreign_char_transform.translation;
+                    let character_position = foreign_char_transform.translation;
 
                     // Decide the direction the enemy should go
                     // If the attacker is closer to the platforms center it should push the enemy the opposite way.
-                    let push_left = if attacker_origin_pos.x > foreign_char_pos.x {
+                    let push_left = if attacker_origin_pos.x > character_position.x {
                         -1.0
                     } else {
                         1.0
                     };
 
-                    let attacker_result = foreign_character_query
+                    let attacker_result = character_query
                         .iter_mut()
-                        .find(|(ent, _, _, _)| *ent == attack_object.attack_by);
+                        .find(|(ent, _, _, _, _)| *ent == attack_object.attack_by);
 
                     // Increment the local player's combo counter and reset its timer
-                    if let Some((_, mut local_player, _, _)) = attacker_result {
+                    if let Some((_, mut local_player, _, _, _)) = attacker_result {
                         if let Some(combo_counter) = &mut local_player.combo_stats {
                             combo_counter.combo_counter += 1;
                             combo_counter.combo_timer.reset();
                         } else {
                             local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
                         }
+
+                        attacker_uuid = Some(local_player.id.clone())
                     }
 
                     colliding_entity_commands.insert(Velocity {
@@ -204,17 +221,114 @@ pub fn check_for_collision_with_attack_object(
                         angvel: 0.,
                     });
                 };
+
+                let character_query_result = character_query
+                    .iter_mut()
+                    .find(|(character_entity, _, _, _, _)| {
+                        *character_entity == *entity
+                            || *character_entity == *entity1
+                    })
+                    .map(|(e, p, t, v, lp)| (e, p.clone(), *t, *v, lp));
+
+                if let Some((_, _, _, _, mut last_interacted_pawn)) = character_query_result
+                {
+                    if let Some(attacker_uuid) = &attacker_uuid {
+                        last_interacted_pawn.set_last_pawn(*attacker_uuid);
+                    }
+                }
             }
             bevy_rapier2d::prelude::CollisionEvent::Stopped(
                 entity,
                 entity1,
                 collision_event_flags,
-            ) => {}
+            ) => {
+                
+            }
         };
     }
 
     //Remove all the attacks objects after checking for collision
     for (ent, _) in attack_object_query.iter() {
         commands.entity(ent).despawn();
+    }
+}
+
+pub fn check_players_out_of_bounds(
+    runtime: Res<TokioTasksRuntime>,
+    players: Query<(Entity, &Pawn, &Transform, &LastInteractedPawn), Changed<Transform>>,
+    app_ctx: Res<ApplicationCtx>,
+    mut commands: Commands,
+    collision_groups: Res<CollisionGroupSet>,
+) {
+    // Check if there is a server running currently
+    if let Some(server_instance) = &app_ctx.server_instance {
+        // Create a list of all the modified client statistics.
+        let mut modified_client_stats: Vec<ClientStatistics> = Vec::new();
+
+        // Iter over the list of players
+        for (e, pawn, position, last_interacted_pawn) in players.iter() {
+            // Check if the player contained in the query is out of bounds
+            if position.translation.y < -400. {
+                let mut client_stats_list_handle = server_instance.connected_clients_stats.write();
+
+                let client_stats_list = client_stats_list_handle
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<ClientStatistics>>();
+
+                for mut client in client_stats_list.clone()
+                {
+                    // Find the matching uuid
+                    if client.uuid == pawn.id {
+                        // Remove the original entry
+                        client_stats_list_handle.remove(&client.clone());
+
+                        // Modify the entry
+                        client.deaths += 1;
+
+                        // Re-insert the entry
+                        client_stats_list_handle.insert(client.clone());
+
+                        // Store the modified client stats entry in the list so that it can be sent later to the clients
+                        modified_client_stats.push(client);
+
+                        // Check who interacted last with the pawn
+                        if let Some(last_int_player_uuid) = last_interacted_pawn.get_inner() {
+                            for mut client_stats in client_stats_list.clone() {
+                                if client_stats.uuid == *last_int_player_uuid {
+                                    client_stats_list_handle.remove(&client_stats);
+
+                                    // Increment stats
+                                    client_stats.kills += 1;
+                                    client_stats.score += 100;
+
+                                    // Update the BTreeSet on the serverside
+                                    client_stats_list_handle.insert(client_stats.clone());
+
+                                    // Store the modified client stats entry in the list so that it can be sent later to the clients
+                                    modified_client_stats.push(client_stats);
+                                }
+                            }
+                        }
+
+                        // Despawn pawn which has fallen off
+                        commands.entity(e).despawn();
+
+                        // Respawn the pawn
+                        spawn_pawn(&mut commands, pawn.id, collision_groups.pawn);
+                    }
+                }
+            }
+        }
+        // Clone the list handle
+        let connected_clients_clone =
+            server_instance.connected_client_tcp_handles.clone();
+
+        // Create an async task for sending the updates to the clients
+        runtime.spawn_background_task(async move |_ctx| {
+            // Notify all the clients about the new entries
+            notify_clients_about_stats_changes(modified_client_stats, connected_clients_clone)
+                .await;
+        });
     }
 }

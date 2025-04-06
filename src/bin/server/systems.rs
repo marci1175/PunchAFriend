@@ -4,7 +4,7 @@ use chrono::{Local, TimeDelta};
 use punchafriend::{
     game::{map::load_map_from_mapinstance, pawns::spawn_pawn},
     networking::{
-        server::{notify_clients_about_stats_change, ServerInstance},
+        server::{notify_clients_about_stats_changes, ServerInstance},
         ClientStatistics, OngoingGameData,
         ServerGameState::{self, Intermission},
     },
@@ -90,6 +90,7 @@ pub fn recv_tick(
                 notify_valid_clients_intermission(&runtime, client_list, intermission_data);
 
                 app_ctx.game_round_timer = None;
+                app_ctx.intermission_timer = Some(Timer::from_seconds(30., bevy::time::TimerMode::Once));
             }
         }
     }
@@ -102,8 +103,8 @@ pub fn recv_tick(
     // If there is any existing intermission timer get the immutable state of it
     if let Some(timer) = app_ctx.intermission_timer.clone() {
         if let Some(server_instance) = &app_ctx.server_instance {
-            // If the countdown has ended notify all the client
-            if timer.finished() {
+            // If the countdown has ended or all of the votes have been casted notify all the clients about the intermission end, and send the new map.
+            if timer.finished() || app_ctx.intermission_total_votes == server_instance.connected_client_tcp_handles.len() {
                 let game_state = server_instance.game_state.read().clone();
 
                 if let Intermission(intermission_data) = game_state {
@@ -166,7 +167,11 @@ pub fn recv_tick(
                                         .iter()
                                         .position(|(map, _)| *map == voted_map_name_discriminant)
                                     {
+                                        // Increment the voted map's vote count
                                         server_intermission_data.selectable_maps[idx].1 += 1;
+
+                                        // Increment total round count, to check if all the clients have voted
+                                        app_ctx.intermission_total_votes += 1;
                                     }
                                 }
                                 punchafriend::networking::ServerGameState::OngoingGame(
@@ -425,57 +430,4 @@ pub fn setup_window(
     commands.spawn(Camera2d);
 
     framerate.limiter = Limiter::from_framerate(120.);
-}
-
-pub fn check_players_out_of_bounds(
-    runtime: Res<TokioTasksRuntime>,
-    players: Query<(Entity, &Pawn, &Transform), Changed<Transform>>,
-    app_ctx: Res<ApplicationCtx>,
-    mut commands: Commands,
-    collision_groups: Res<CollisionGroupSet>,
-) {
-    // Check if there is a server running currently
-    if let Some(server_instance) = &app_ctx.server_instance {
-        // Iter over the list of players
-        for (e, pawn, position) in players.iter() {
-            // Check if the player contained in the query is out of bounds
-            if position.translation.y < -300. {
-                let mut client_stats_list_handle = server_instance.connected_clients_stats.write();
-                for mut client in client_stats_list_handle
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<ClientStatistics>>()
-                {
-                    // Find the matching uuid
-                    if client.uuid == pawn.id {
-                        // Remove the original entry
-                        client_stats_list_handle.remove(&client.clone());
-
-                        // Modify the entry
-                        client.deaths += 1;
-
-                        // Re-insert the entry
-                        client_stats_list_handle.insert(client.clone());
-
-                        // Clone the list handle
-                        let connected_clients_clone =
-                            server_instance.connected_client_tcp_handles.clone();
-
-                        // Create an async task
-                        runtime.spawn_background_task(async move |_ctx| {
-                            // Notify all the clients about the new entry
-                            notify_clients_about_stats_change(client, connected_clients_clone)
-                                .await;
-                        });
-
-                        // Despawn pawn which has fallen off
-                        commands.entity(e).despawn();
-
-                        // Respawn the pawn
-                        spawn_pawn(&mut commands, pawn.id, collision_groups.pawn);
-                    }
-                }
-            }
-        }
-    }
 }

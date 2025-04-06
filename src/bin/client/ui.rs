@@ -1,14 +1,8 @@
 use bevy::{
-    asset::{AssetId, Assets},
-    ecs::{
+    asset::{AssetId, Assets}, ecs::{
         entity::Entity,
         system::{Commands, Query, Res, ResMut},
-    },
-    input::{keyboard::KeyCode, ButtonInput},
-    render::mesh::Mesh,
-    sprite::TextureAtlasLayout,
-    time::Time,
-    transform::components::Transform,
+    }, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::TextureAtlasLayout, time::Time, transform::components::Transform
 };
 use bevy_egui::{
     egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
@@ -84,7 +78,7 @@ pub fn ui_system(
                                 Color32::from_black_alpha(210),
                             );
 
-                            let leaderbaord_area = ui.group(|ui| {
+                            ui.group(|ui| {
                                 let table = TableBuilder::new(ui)
                                     .striped(true)
                                     .columns(Column::auto(), 5)
@@ -362,8 +356,17 @@ pub fn ui_system(
                                     .collect::<Vec<AssetId<TextureAtlasLayout>>>()
                                     .into_iter()
                                 {
+                                    
                                     materials.remove(material);
                                 }
+
+                                app_ctx.texture_atlas_layouts = materials.add(TextureAtlasLayout::from_grid(
+                                    UVec2::new(50, 64),
+                                    7,
+                                    1,
+                                    Some(UVec2::new(20, 0)),
+                                    None,
+                                ));
                             }
                         });
                     }),
