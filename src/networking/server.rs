@@ -23,8 +23,7 @@ use crate::{
 };
 
 use super::{
-    write_to_buf_with_len, ClientStatistics, EndpointMetadata, OngoingGameData,
-    RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest,
+    write_to_buf_with_len, ClientMetadata, ClientStatistics, ConnectionMetadata, OngoingGameData, RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest
 };
 
 #[derive(Debug, Clone)]
@@ -46,7 +45,7 @@ pub struct ServerInstance {
     pub tcp_listener: Arc<Mutex<TcpListener>>,
     pub udp_socket: Arc<UdpSocket>,
 
-    pub metadata: EndpointMetadata,
+    pub metadata: ConnectionMetadata,
     pub tcp_listener_port: u16,
 
     pub client_udp_receiver: Option<Receiver<(RemoteClientGameRequest, SocketAddr)>>,
@@ -81,7 +80,7 @@ impl ServerInstance {
             udp_socket: Arc::new(udp_socket),
             tcp_listener_port,
             client_udp_receiver: None,
-            metadata: EndpointMetadata::new(udp_socket_port),
+            metadata: ConnectionMetadata::new(udp_socket_port),
             connected_client_tcp_handles: Arc::new(DashMap::new()),
             client_tcp_receiver: None,
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
@@ -114,7 +113,7 @@ pub fn setup_remote_client_handler(
 
     let udp_socket = server_instance.udp_socket.clone();
 
-    let metadata = server_instance.metadata;
+    let metadata = server_instance.metadata.clone();
 
     let connected_clients_clone = client_game_socket_list.clone();
 
@@ -164,7 +163,7 @@ pub fn setup_remote_client_handler(
                         let cancellation_token_clone = cancellation_token_clone.clone();
                         
                         // Create the new stats field
-                        let new_statistics_field = ClientStatistics::new(uuid);
+                        let new_statistics_field = ClientStatistics::new(uuid, client_metadata.username.clone());
 
                         // Create a new field in the Statistics list
                         connected_clients_stats.write().insert(new_statistics_field.clone());
@@ -265,7 +264,7 @@ async fn exchange_metadata(
     read_half: &mut OwnedReadHalf,
     write_half: &mut OwnedWriteHalf,
     metadata: ServerMetadata,
-) -> anyhow::Result<EndpointMetadata> {
+) -> anyhow::Result<ClientMetadata> {
     let slice = rmp_serde::to_vec(&metadata)?;
 
     write_to_buf_with_len(write_half, &slice).await?;
@@ -276,7 +275,7 @@ async fn exchange_metadata(
 
     read_half.read_exact(&mut buf).await?;
 
-    let client_metadata = rmp_serde::from_slice::<EndpointMetadata>(&buf)?;
+    let client_metadata = rmp_serde::from_slice::<ClientMetadata>(&buf)?;
 
     Ok(client_metadata)
 }

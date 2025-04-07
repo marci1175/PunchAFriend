@@ -14,8 +14,7 @@ use uuid::Uuid;
 use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{
-    write_to_buf_with_len, ClientStatistics, EndpointMetadata, RemoteClientRequest,
-    RemoteServerRequest, ServerMetadata,
+    write_to_buf_with_len, ClientMetadata, ClientStatistics, ConnectionMetadata, RemoteClientRequest, RemoteServerRequest, ServerMetadata
 };
 
 #[derive(Resource)]
@@ -36,6 +35,7 @@ pub struct ClientConnection {
 impl ClientConnection {
     pub async fn connect_to_address(
         address: String,
+        username: String,
         cancellation_token: CancellationToken,
     ) -> anyhow::Result<Self> {
         // Parse destination address.
@@ -51,7 +51,7 @@ impl ClientConnection {
         // We will send this to the server so that it knows where to send the ticks to.
         let socket_port = udp_socket.local_addr()?.port();
 
-        let client_metadata = EndpointMetadata::new(socket_port);
+        let client_metadata = ClientMetadata::new(socket_port, username);
 
         // Exchange metadata with the server.
         // We will send the UdpSocket's port and the server will send our unique uuid, and the port of the Server's UdpSocket.
@@ -198,7 +198,7 @@ async fn setup_server_handler(
 
 async fn exchange_metadata(
     tcp_stream: &mut TcpStream,
-    client_metadata: EndpointMetadata,
+    client_metadata: ClientMetadata,
 ) -> anyhow::Result<ServerMetadata> {
     // Allocate a buffer for the incoming message
     let mut msg_header_buf = vec![0; 4];

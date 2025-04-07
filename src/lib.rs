@@ -109,12 +109,14 @@ pub mod client {
         pub connect_to_address: String,
         pub leaderboard_rect: Rect,
         pub current_resource_pack: Option<PathBuf>,
+        pub username_buffer: String,
     }
 
     impl Default for UiState {
         fn default() -> Self {
             Self {
                 connect_to_address: String::new(),
+                username_buffer: String::new(),
                 leaderboard_rect: Rect::NOTHING,
                 current_resource_pack: None,
             }

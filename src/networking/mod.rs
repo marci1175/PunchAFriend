@@ -153,14 +153,33 @@ impl ServerMetadata {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, Copy)]
-pub struct EndpointMetadata {
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct ConnectionMetadata {
     pub game_socket_port: u16,
 }
 
-impl EndpointMetadata {
+impl ConnectionMetadata {
     pub fn new(game_socket_port: u16) -> Self {
         Self { game_socket_port }
+    }
+
+    pub fn into_server_metadata(&self, id: Uuid) -> ServerMetadata {
+        ServerMetadata {
+            game_socket_port: self.game_socket_port,
+            client_uuid: id,
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct ClientMetadata {
+    pub game_socket_port: u16,
+    pub username: String,
+}
+
+impl ClientMetadata {
+    pub fn new(game_socket_port: u16, username: String) -> Self {
+        Self { game_socket_port, username }
     }
 
     pub fn into_server_metadata(&self, id: Uuid) -> ServerMetadata {
@@ -208,16 +227,17 @@ pub enum GameInput {
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, Eq, Ord, Default)]
 pub struct ClientStatistics {
     pub uuid: Uuid,
-    pub name: String,
+    pub username: String,
     pub kills: u32,
     pub deaths: u32,
     pub score: u32,
 }
 
 impl ClientStatistics {
-    pub fn new(uuid: Uuid) -> Self {
+    pub fn new(uuid: Uuid, username: String) -> Self {
         Self {
             uuid,
+            username,
             ..Default::default()
         }
     }

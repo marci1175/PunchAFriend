@@ -113,7 +113,7 @@ pub fn ui_system(
                                             |mut column| {
                                                 if let Some(client) = client_stats_iter.next() {
                                                     column.col(|ui| {
-                                                        ui.label(client.name.clone());
+                                                        ui.label(client.username.clone());
                                                     });
                                                     column.col(|ui| {
                                                         ui.label(format!("{}", client.kills));
@@ -257,6 +257,15 @@ pub fn ui_system(
 
                     ui.text_edit_singleline(&mut app_ctx.ui_state.connect_to_address);
 
+                    ui.label("Set Username");
+
+                    // Username buffer setter
+                    ui.text_edit_singleline(&mut app_ctx.ui_state.username_buffer);
+                    
+                    ui.add_enabled_ui(!app_ctx.ui_state.username_buffer.is_empty(), |ui| {
+
+                    });
+
                     if ui.button("Connect").clicked() && app_ctx.client_connection.is_none() {
                         // Clone the address so it can be moved.
                         let address = app_ctx.ui_state.connect_to_address.clone();
@@ -267,11 +276,13 @@ pub fn ui_system(
                         // Set the channel
                         let cancellation_token = app_ctx.cancellation_token.clone();
 
+                        let username = app_ctx.ui_state.username_buffer.clone();
+
                         // Create the connecting thread
                         runtime.spawn_background_task(|_ctx| async move {
                             // Attempt to make a connection to the remote address.
                             let client_connection =
-                                ClientConnection::connect_to_address(address, cancellation_token)
+                                ClientConnection::connect_to_address(address, username.clone(), cancellation_token)
                                     .await;
 
                             // Send it to the front end no matter the end result.
