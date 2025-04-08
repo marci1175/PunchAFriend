@@ -89,12 +89,12 @@ pub fn handle_server_output(
                         )| {
                             // Check if the player was found
                             let player_found = player.id == pawn_update.player.id;
-        
+
                             // If the entity was not found we spawn a new one
                             if !player_found {
                                 return false;
                             }
-        
+
                             // Check if the player is updateable, ie moved
                             // If it moved update its position
                             if unique_tick_count.get_inner() < pawn_update.tick_count {
@@ -105,22 +105,22 @@ pub fn handle_server_output(
                                         atlas.index = animation_state.animate_state(time.delta());
                                     }
                                 }
-        
+
                                 // Set new infromation
                                 *player = pawn_update.player.clone();
                                 *transfrom = pawn_update.position;
                                 *velocity = pawn_update.velocity;
-        
+
                                 // Change the animation to walk
                                 sprite.image = asset_server.load("../assets/walk.png");
-        
+
                                 // Set the max idx
                                 animation_state.set_idx_max(7);
-        
+
                                 // Set the new tick count as the latest tick for this entity
                                 unique_tick_count.with_tick(pawn_update.tick_count);
                             }
-        
+
                             // Return whether the player was found
                             player_found
                         },
@@ -133,9 +133,9 @@ pub fn handle_server_output(
                             1,
                             0,
                         );
-        
+
                         let starting_anim_idx = animation_state.animation_idx;
-        
+
                         commands
                             .spawn(RigidBody::Dynamic)
                             .insert(Collider::cuboid(20.0, 30.0))
@@ -157,10 +157,10 @@ pub fn handle_server_output(
                                 },
                             ))
                             .insert(pawn_update.player.clone());
-        
+
                         break;
                     }
-                },
+                }
                 punchafriend::networking::TickUpdateType::MapObject(map_object_update) => {
                     for (_, map_element, mut transform) in current_game_objects.iter_mut() {
                         if map_element.id == map_object_update.id {
@@ -169,9 +169,8 @@ pub fn handle_server_output(
                             break;
                         }
                     }
-                },
+                }
             }
-            
         }
 
         for (_, _, transform, _, _, mut sprite, mut anim_state, last_transform_state) in
@@ -374,7 +373,10 @@ pub fn setup_game(
         .insert(Transform::from_xyz(0.0, -200.0, 0.0))
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(collision_groups.map_object)
-        .insert(MapElement { object_type: punchafriend::game::map::ObjectType::Static, id: Uuid::new_v4() });
+        .insert(MapElement {
+            object_type: punchafriend::game::map::ObjectType::Static,
+            id: Uuid::new_v4(),
+        });
 
     winit_settings.unfocused_mode = UpdateMode::Continuous;
 

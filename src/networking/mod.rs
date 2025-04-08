@@ -123,9 +123,7 @@ pub struct ServerTickUpdate {
 
 impl ServerTickUpdate {
     pub fn new(tick_update_type: TickUpdateType) -> Self {
-        Self {
-            tick_update_type,
-        }
+        Self { tick_update_type }
     }
 }
 

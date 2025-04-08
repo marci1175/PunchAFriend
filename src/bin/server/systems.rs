@@ -2,21 +2,34 @@ pub const MINUTE_SECS: u64 = 60;
 
 use chrono::{Local, TimeDelta};
 use punchafriend::{
-    game::{map::{load_map_from_mapinstance, MapObjectUpdate, MovementState}, pawns::spawn_pawn},
+    game::{
+        map::{load_map_from_mapinstance, MapObjectUpdate, MovementState},
+        pawns::spawn_pawn,
+    },
     networking::{
-        server::{notify_clients_about_stats_changes, ServerInstance}, ClientStatistics, OngoingGameData, PawnUpdate, ServerGameState::{self, Intermission}
+        server::{notify_clients_about_stats_changes, ServerInstance},
+        ClientStatistics, OngoingGameData, PawnUpdate,
+        ServerGameState::{self, Intermission},
     },
 };
 use std::{sync::Arc, time::Duration};
 
 use bevy::{
-    asset::Assets, core_pipeline::core_2d::Camera2d, ecs::{
+    asset::Assets,
+    core_pipeline::core_2d::Camera2d,
+    ecs::{
         entity::Entity,
         event::EventReader,
         query::{Changed, With, Without},
         system::{Commands, Query, Res, ResMut},
         world::Mut,
-    }, math::{vec2, Vec3}, render::mesh::Mesh, sprite::ColorMaterial, time::{Real, Time, Timer}, transform::components::Transform, winit::{UpdateMode, WinitSettings}
+    },
+    math::{vec2, Vec3},
+    render::mesh::Mesh,
+    sprite::ColorMaterial,
+    time::{Real, Time, Timer},
+    transform::components::Transform,
+    winit::{UpdateMode, WinitSettings},
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{KinematicCharacterController, Velocity};
@@ -37,7 +50,10 @@ use punchafriend::{
 };
 use tokio::net::tcp::OwnedWriteHalf;
 
-use crate::ui::{create_intermission_data_all, notify_valid_clients_intermission, notify_valid_clients_map_change};
+use crate::ui::{
+    create_intermission_data_all, notify_valid_clients_intermission,
+    notify_valid_clients_map_change,
+};
 
 pub fn recv_tick(
     mut commands: Commands,
@@ -357,7 +373,9 @@ pub fn send_tick(
         for (_entity, player, _, position, velocity) in players_query.iter() {
             // Create a ServerTickUpdate from the data provided by the query
             let server_tick_update =
-                ServerTickUpdate::new(punchafriend::networking::TickUpdateType::Pawn(PawnUpdate::new(*position, *velocity, player.clone(), current_tick_count)));
+                ServerTickUpdate::new(punchafriend::networking::TickUpdateType::Pawn(
+                    PawnUpdate::new(*position, *velocity, player.clone(), current_tick_count),
+                ));
 
             // Serialize the packet into bytes so it can be sent later
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
@@ -443,40 +461,60 @@ pub fn tick(
                 punchafriend::game::map::ObjectType::Static => (),
                 punchafriend::game::map::ObjectType::Variable(variable_object) => {
                     match variable_object.movement_type.clone() {
-                        punchafriend::game::map::ObjectMovementType::Circular(object_movement_type) => {
-    
-                        },
-                        punchafriend::game::map::ObjectMovementType::Linear(object_movement_type) => {
+                        punchafriend::game::map::ObjectMovementType::Circular(
+                            object_movement_type,
+                        ) => {}
+                        punchafriend::game::map::ObjectMovementType::Linear(
+                            object_movement_type,
+                        ) => {
                             let object_params = variable_object.movement_params.clone();
-    
-                            let total_path_length = object_params.destination_pos - object_params.starting_pos;
-    
+
+                            let total_path_length =
+                                object_params.destination_pos - object_params.starting_pos;
+
                             let sec_step = total_path_length / object_params.duration.as_secs_f32();
                             let current_step = sec_step * game_time.delta_secs();
-    
+
                             match variable_object.movement_state.clone() {
                                 punchafriend::game::map::MovementState::In => {
-                                    transform.translation += Vec3::new(current_step.x, current_step.y, 0.);
-    
-                                    if transform.translation.x.abs() > object_params.destination_pos.x && transform.translation.y <= object_params.destination_pos.y {
+                                    transform.translation +=
+                                        Vec3::new(current_step.x, current_step.y, 0.);
+
+                                    if transform.translation.x.abs()
+                                        > object_params.destination_pos.x
+                                        && transform.translation.y
+                                            <= object_params.destination_pos.y
+                                    {
                                         variable_object.movement_state = MovementState::Out;
                                     }
-                                },
+                                }
                                 punchafriend::game::map::MovementState::Out => {
-                                    transform.translation -= Vec3::new(current_step.x, current_step.y, 0.);
-    
-                                    if transform.translation.x.abs() > object_params.destination_pos.x && transform.translation.y >= object_params.destination_pos.y {
+                                    transform.translation -=
+                                        Vec3::new(current_step.x, current_step.y, 0.);
+
+                                    if transform.translation.x.abs()
+                                        > object_params.destination_pos.x
+                                        && transform.translation.y
+                                            >= object_params.destination_pos.y
+                                    {
                                         variable_object.movement_state = MovementState::In;
                                     }
-                                },
+                                }
                             }
 
-                            notify_valid_clients_map_change(udp_socket.clone(), &runtime, connected_clients.clone(), MapObjectUpdate {transform: transform.clone(), id: map_element.id.clone() });
-                        },
+                            notify_valid_clients_map_change(
+                                udp_socket.clone(),
+                                &runtime,
+                                connected_clients.clone(),
+                                MapObjectUpdate {
+                                    transform: transform.clone(),
+                                    id: map_element.id.clone(),
+                                },
+                            );
+                        }
                     }
-                },
+                }
             }
         }
     }
-    
 }

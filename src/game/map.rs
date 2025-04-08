@@ -2,10 +2,12 @@ use std::time::Duration;
 
 use bevy::{
     ecs::{
-        component::Component, entity::Entity, query::Without, system::{Commands, Query}
+        component::Component,
+        entity::Entity,
+        query::Without,
+        system::{Commands, Query},
     },
     math::{vec2, Vec2},
-    time::Timer,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{ActiveEvents, Collider};
@@ -56,7 +58,6 @@ pub struct MapObject {
     pub texture_name: String,
 
     pub object_type: ObjectType,
-
 }
 
 #[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -99,7 +100,7 @@ impl MapInstance {
         for position in (-400..400).step_by(150) {
             map_objects.push(MapObject {
                 id: Uuid::new_v4(),
-                size: vec2(40., 10.),   
+                size: vec2(40., 10.),
                 position: vec2(position as f32, -200.),
                 texture_name: String::new(),
                 object_type: ObjectType::Static,
@@ -113,7 +114,7 @@ impl MapInstance {
 
     pub fn map_test() -> Self {
         let mut map_objects: Vec<MapObject> = vec![];
-        
+
         map_objects.push(MapObject {
             id: Uuid::new_v4(),
             size: vec2(500., 30.),
@@ -138,7 +139,9 @@ impl MapInstance {
             }),
         });
 
-        Self { objects: map_objects }
+        Self {
+            objects: map_objects,
+        }
     }
 }
 
@@ -204,6 +207,9 @@ pub fn load_map_from_mapinstance(
             ))
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(collision_groups.map_object)
-            .insert(MapElement { object_type: object.object_type, id: object.id.clone() });
+            .insert(MapElement {
+                object_type: object.object_type,
+                id: object.id,
+            });
     }
 }

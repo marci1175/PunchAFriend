@@ -3,11 +3,14 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use bevy::{
     asset::Assets,
     ecs::{
-        entity::Entity, query::Without, system::{Commands, Query, Res, ResMut}
+        entity::Entity,
+        query::Without,
+        system::{Commands, Query, Res, ResMut},
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::Timer, transform::components::Transform,
+    time::Timer,
+    transform::components::Transform,
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
@@ -20,7 +23,8 @@ use parking_lot::Mutex;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
-        map::{load_map_from_mapinstance, MapElement, MapNameDiscriminants, MapObjectUpdate}, pawns::Pawn,
+        map::{load_map_from_mapinstance, MapElement, MapNameDiscriminants, MapObjectUpdate},
+        pawns::Pawn,
     },
     networking::{
         server::{send_request_to_client, setup_remote_client_handler, ServerInstance},
@@ -30,7 +34,10 @@ use punchafriend::{
     UiLayer,
 };
 use strum::VariantArray;
-use tokio::{net::{tcp::OwnedWriteHalf, UdpSocket}, sync::mpsc::channel};
+use tokio::{
+    net::{tcp::OwnedWriteHalf, UdpSocket},
+    sync::mpsc::channel,
+};
 use uuid::Uuid;
 
 use crate::systems::MINUTE_SECS;
@@ -226,13 +233,16 @@ pub fn create_intermission_data_all() -> IntermissionData {
 pub fn notify_valid_clients_map_change(
     udp_socket: Arc<UdpSocket>,
     runtime: &Res<'_, TokioTasksRuntime>,
-    dash_map:  Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
+    dash_map: Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
     map_object_update: MapObjectUpdate,
 ) {
     runtime.spawn_background_task(move |_ctx| async move {
         // Serialize the packet into bytes so it can be sent later
-        let message_bytes = rmp_serde::to_vec(&ServerTickUpdate::new(punchafriend::networking::TickUpdateType::MapObject(map_object_update))).unwrap();
-        
+        let message_bytes = rmp_serde::to_vec(&ServerTickUpdate::new(
+            punchafriend::networking::TickUpdateType::MapObject(map_object_update),
+        ))
+        .unwrap();
+
         // Get the lenght of the message and turn it into bytes
         let mut message_length_bytes = (message_bytes.len() as u32).to_be_bytes().to_vec();
 
@@ -244,7 +254,10 @@ pub fn notify_valid_clients_map_change(
             // Get the handle of the TcpStream established when the client was connecting to the server
             let socket_addr = socket_addr.key();
 
-            udp_socket.send_to(&message_length_bytes, socket_addr.clone()).await.unwrap();
+            udp_socket
+                .send_to(&message_length_bytes, socket_addr.clone())
+                .await
+                .unwrap();
         }
     });
 }

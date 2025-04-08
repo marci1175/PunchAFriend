@@ -211,7 +211,7 @@ pub fn check_for_collision_with_attack_object(
                             local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
                         }
 
-                        attacker_uuid = Some(local_player.id.clone())
+                        attacker_uuid = Some(local_player.id)
                     }
 
                     colliding_entity_commands.insert(Velocity {

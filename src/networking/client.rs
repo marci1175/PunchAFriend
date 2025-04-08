@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{
-    write_to_buf_with_len, ClientMetadata, ClientStatistics,
-    RemoteClientRequest, RemoteServerRequest, ServerMetadata,
+    write_to_buf_with_len, ClientMetadata, ClientStatistics, RemoteClientRequest,
+    RemoteServerRequest, ServerMetadata,
 };
 
 #[derive(Resource)]
