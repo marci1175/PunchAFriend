@@ -13,7 +13,10 @@ use rand::rngs::SmallRng;
 use std::time::Duration;
 use uuid::Uuid;
 
-use super::{collision::LastInteractedPawn, combat::{spawn_attack, Combo, Effect, EffectType}};
+use super::{
+    collision::LastInteractedPawn,
+    combat::{spawn_attack, Combo, Effect, EffectType},
+};
 
 /// This function modifies the direction variable of the `LocalPlayer`, the variable is always the key last pressed by the user.
 pub fn set_movement_direction_var(game_input: &GameInput, local_player: &mut Mut<'_, Pawn>) {
@@ -181,7 +184,9 @@ pub struct Pawn {
 
     pub id: Uuid,
 
-    pub pawn_attributes: (PawnType, PawnAttribute),
+    pub pawn_attributes: PawnAttribute,
+
+    pub pawn_type: PawnType,
 }
 
 impl Pawn {
@@ -216,7 +221,15 @@ impl Pawn {
     }
 }
 
-#[derive(Default, Clone, serde::Deserialize, serde::Serialize, Debug)]
+#[derive(
+    Default,
+    Clone,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    strum::EnumCount,
+    strum::VariantArray,
+)]
 pub enum PawnType {
     #[default]
     Knight,

@@ -8,7 +8,9 @@ use bevy_rapier2d::{
     render::RapierDebugRenderPlugin,
 };
 use punchafriend::{
-    game::collision::{check_for_collision_with_attack_object, check_players_out_of_bounds, CollisionGroupSet},
+    game::collision::{
+        check_for_collision_with_attack_object, check_players_out_of_bounds, CollisionGroupSet,
+    },
     server::ApplicationCtx,
     RandomEngine,
 };
@@ -38,6 +40,7 @@ fn main() {
     app.add_systems(FixedUpdate, systems::reset_jump_remaining_for_player);
     app.add_systems(FixedUpdate, check_for_collision_with_attack_object);
     app.add_systems(FixedUpdate, check_players_out_of_bounds);
+    app.add_systems(FixedUpdate, systems::tick);
 
     app.run();
 }

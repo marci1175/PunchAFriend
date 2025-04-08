@@ -7,7 +7,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use crate::game::{
-    map::{MapInstance, MapNameDiscriminants},
+    map::{MapInstance, MapNameDiscriminants, MapObjectUpdate},
     pawns::Pawn,
 };
 
@@ -54,6 +54,7 @@ pub enum ServerRequest {
     /// This message is sent when the server wants to set a new state to the game.
     /// Example: Pause state, intermission, ...
     ServerGameStateControl(ServerGameState),
+
     PlayersStatisticsChange(Vec<ClientStatistics>),
 }
 
@@ -117,6 +118,21 @@ impl IntermissionData {
 /// This packet contains every necessary information about a player for the client to simulate it.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ServerTickUpdate {
+    pub tick_update_type: TickUpdateType,
+}
+
+impl ServerTickUpdate {
+    pub fn new(tick_update_type: TickUpdateType) -> Self {
+        Self {
+            tick_update_type,
+        }
+    }
+}
+
+/// This server as a way for the server to send the state of an entity in the world.
+/// This packet contains every necessary information about a player for the client to simulate it.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct PawnUpdate {
     /// The position of the Entity in the tick.
     pub position: Transform,
     /// The velocity of the Entity, this is used so that the client can extrapolate the player's position via its physics engine. Please note that this is really inaccurate and extrapolation should be implemented.
@@ -127,7 +143,7 @@ pub struct ServerTickUpdate {
     pub tick_count: u64,
 }
 
-impl ServerTickUpdate {
+impl PawnUpdate {
     pub fn new(position: Transform, velocity: Velocity, player: Pawn, tick_count: u64) -> Self {
         Self {
             position,
@@ -136,6 +152,12 @@ impl ServerTickUpdate {
             tick_count,
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum TickUpdateType {
+    Pawn(PawnUpdate),
+    MapObject(MapObjectUpdate),
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -179,7 +201,10 @@ pub struct ClientMetadata {
 
 impl ClientMetadata {
     pub fn new(game_socket_port: u16, username: String) -> Self {
-        Self { game_socket_port, username }
+        Self {
+            game_socket_port,
+            username,
+        }
     }
 
     pub fn into_server_metadata(&self, id: Uuid) -> ServerMetadata {

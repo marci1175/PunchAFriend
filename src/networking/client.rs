@@ -14,7 +14,8 @@ use uuid::Uuid;
 use crate::networking::{GameInput, RemoteClientGameRequest, ServerTickUpdate, UDP_DATAGRAM_SIZE};
 
 use super::{
-    write_to_buf_with_len, ClientMetadata, ClientStatistics, ConnectionMetadata, RemoteClientRequest, RemoteServerRequest, ServerMetadata
+    write_to_buf_with_len, ClientMetadata, ClientStatistics,
+    RemoteClientRequest, RemoteServerRequest, ServerMetadata,
 };
 
 #[derive(Resource)]
@@ -179,7 +180,7 @@ async fn setup_server_handler(
                     let buf = rmp_serde::to_vec(&sendable_message).unwrap();
 
                     // Write the received message to the TcpStream for the server to receive it.
-                    write_to_buf_with_len(&mut tcp_stream, &buf).await;
+                    write_to_buf_with_len(&mut tcp_stream, &buf).await.unwrap();
                 }
 
                 Ok(message_length) = tcp_stream.read_u32() => {

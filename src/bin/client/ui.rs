@@ -1,8 +1,15 @@
 use bevy::{
-    asset::{AssetId, Assets}, ecs::{
+    asset::{AssetId, Assets},
+    ecs::{
         entity::Entity,
         system::{Commands, Query, Res, ResMut},
-    }, input::{keyboard::KeyCode, ButtonInput}, math::UVec2, render::mesh::Mesh, sprite::TextureAtlasLayout, time::Time, transform::components::Transform
+    },
+    input::{keyboard::KeyCode, ButtonInput},
+    math::UVec2,
+    render::mesh::Mesh,
+    sprite::TextureAtlasLayout,
+    time::Time,
+    transform::components::Transform,
 };
 use bevy_egui::{
     egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
@@ -261,34 +268,35 @@ pub fn ui_system(
 
                     // Username buffer setter
                     ui.text_edit_singleline(&mut app_ctx.ui_state.username_buffer);
-                    
+
                     ui.add_enabled_ui(!app_ctx.ui_state.username_buffer.is_empty(), |ui| {
+                        if ui.button("Connect").clicked() && app_ctx.client_connection.is_none() {
+                            // Clone the address so it can be moved.
+                            let address = app_ctx.ui_state.connect_to_address.clone();
 
+                            // Move the sender
+                            let sender = app_ctx.connection_sender.clone();
+
+                            // Set the channel
+                            let cancellation_token = app_ctx.cancellation_token.clone();
+
+                            let username = app_ctx.ui_state.username_buffer.clone();
+
+                            // Create the connecting thread
+                            runtime.spawn_background_task(|_ctx| async move {
+                                // Attempt to make a connection to the remote address.
+                                let client_connection = ClientConnection::connect_to_address(
+                                    address,
+                                    username.clone(),
+                                    cancellation_token,
+                                )
+                                .await;
+
+                                // Send it to the front end no matter the end result.
+                                sender.send(client_connection).await.unwrap();
+                            });
+                        };
                     });
-
-                    if ui.button("Connect").clicked() && app_ctx.client_connection.is_none() {
-                        // Clone the address so it can be moved.
-                        let address = app_ctx.ui_state.connect_to_address.clone();
-
-                        // Move the sender
-                        let sender = app_ctx.connection_sender.clone();
-
-                        // Set the channel
-                        let cancellation_token = app_ctx.cancellation_token.clone();
-
-                        let username = app_ctx.ui_state.username_buffer.clone();
-
-                        // Create the connecting thread
-                        runtime.spawn_background_task(|_ctx| async move {
-                            // Attempt to make a connection to the remote address.
-                            let client_connection =
-                                ClientConnection::connect_to_address(address, username.clone(), cancellation_token)
-                                    .await;
-
-                            // Send it to the front end no matter the end result.
-                            sender.send(client_connection).await.unwrap();
-                        });
-                    };
                 });
             });
         }
@@ -367,17 +375,17 @@ pub fn ui_system(
                                     .collect::<Vec<AssetId<TextureAtlasLayout>>>()
                                     .into_iter()
                                 {
-                                    
                                     materials.remove(material);
                                 }
 
-                                app_ctx.texture_atlas_layouts = materials.add(TextureAtlasLayout::from_grid(
-                                    UVec2::new(50, 64),
-                                    7,
-                                    1,
-                                    Some(UVec2::new(20, 0)),
-                                    None,
-                                ));
+                                app_ctx.texture_atlas_layouts =
+                                    materials.add(TextureAtlasLayout::from_grid(
+                                        UVec2::new(50, 64),
+                                        7,
+                                        1,
+                                        Some(UVec2::new(20, 0)),
+                                        None,
+                                    ));
                             }
                         });
                     }),

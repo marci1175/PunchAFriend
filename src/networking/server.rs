@@ -23,7 +23,8 @@ use crate::{
 };
 
 use super::{
-    write_to_buf_with_len, ClientMetadata, ClientStatistics, ConnectionMetadata, OngoingGameData, RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest
+    write_to_buf_with_len, ClientMetadata, ClientStatistics, ConnectionMetadata, OngoingGameData,
+    RemoteClientGameRequest, RemoteServerRequest, ServerGameState, ServerMetadata, ServerRequest,
 };
 
 #[derive(Debug, Clone)]
@@ -85,7 +86,13 @@ impl ServerInstance {
             client_tcp_receiver: None,
             game_state: Arc::new(RwLock::new(ServerGameState::OngoingGame(
                 OngoingGameData::new(
-                    MapInstance::map_flatground(),
+                    (|| {
+                        #[cfg(debug_assertions)]
+                        return MapInstance::map_test();
+
+                        #[cfg(not(debug_assertions))]
+                        return MapInstance::map_flatground();
+                    })(),
                     round_start_date
                         .checked_add_signed(TimeDelta::from_std(Duration::from_secs(8 * 60))?)
                         .unwrap(),

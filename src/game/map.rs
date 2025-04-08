@@ -1,26 +1,74 @@
+use std::time::Duration;
+
 use bevy::{
     ecs::{
-        component::Component,
-        entity::Entity,
-        system::{Commands, Query},
+        component::Component, entity::Entity, query::Without, system::{Commands, Query}
     },
     math::{vec2, Vec2},
+    time::Timer,
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{ActiveEvents, Collider};
+use uuid::Uuid;
 
-use super::collision::CollisionGroupSet;
+use super::{collision::CollisionGroupSet, pawns::Pawn};
 
-#[derive(Component, Clone)]
-/// A MapElement instnace is an object which is a part of the map.
+/// A StaticMapElement instnace is an object which is a part of the map.
 /// This is used to make difference between Entities which are a part of the obstacles contained in the map.
-pub struct MapElement;
+#[derive(Component, Clone)]
+pub struct MapElement {
+    pub id: Uuid,
+    pub object_type: ObjectType,
+}
+
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct VariableObject {
+    pub movement_params: ObjectMovementParam,
+    pub movement_type: ObjectMovementType,
+    pub movement_state: MovementState,
+}
+
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum MovementState {
+    In,
+    Out,
+}
+
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct ObjectMovementParam {
+    pub starting_pos: Vec2,
+    pub destination_pos: Vec2,
+
+    pub duration: Duration,
+}
+
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum ObjectMovementType {
+    Circular(Option<Box<ObjectMovementType>>),
+    Linear(Option<Box<ObjectMovementType>>),
+}
 
 #[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct MapObject {
+    pub id: Uuid,
     pub size: Vec2,
     pub position: Vec2,
     pub texture_name: String,
+
+    pub object_type: ObjectType,
+
+}
+
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct MapObjectUpdate {
+    pub transform: Transform,
+    pub id: Uuid,
+}
+
+#[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum ObjectType {
+    Static,
+    Variable(VariableObject),
 }
 
 #[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -33,9 +81,11 @@ impl MapInstance {
         let mut map_objects: Vec<MapObject> = vec![];
 
         map_objects.push(MapObject {
+            id: Uuid::new_v4(),
             size: vec2(500., 30.),
             position: vec2(0., -200.),
             texture_name: String::new(),
+            object_type: ObjectType::Static,
         });
 
         Self {
@@ -48,15 +98,47 @@ impl MapInstance {
 
         for position in (-400..400).step_by(150) {
             map_objects.push(MapObject {
-                size: vec2(40., 10.),
+                id: Uuid::new_v4(),
+                size: vec2(40., 10.),   
                 position: vec2(position as f32, -200.),
                 texture_name: String::new(),
+                object_type: ObjectType::Static,
             });
         }
 
         Self {
             objects: map_objects,
         }
+    }
+
+    pub fn map_test() -> Self {
+        let mut map_objects: Vec<MapObject> = vec![];
+        
+        map_objects.push(MapObject {
+            id: Uuid::new_v4(),
+            size: vec2(500., 30.),
+            position: vec2(0., -200.),
+            texture_name: String::new(),
+            object_type: ObjectType::Static,
+        });
+
+        map_objects.push(MapObject {
+            id: Uuid::new_v4(),
+            size: vec2(20., 50.),
+            position: vec2(300., -200.),
+            texture_name: String::new(),
+            object_type: ObjectType::Variable(VariableObject {
+                movement_params: ObjectMovementParam {
+                    starting_pos: vec2(250., -200.),
+                    destination_pos: vec2(350., -200.),
+                    duration: Duration::from_secs(2),
+                },
+                movement_state: MovementState::In,
+                movement_type: ObjectMovementType::Linear(None),
+            }),
+        });
+
+        Self { objects: map_objects }
     }
 }
 
@@ -102,13 +184,13 @@ pub fn load_map_from_mapinstance(
     map_instance: MapInstance,
     commands: &mut Commands,
     collision_groups: CollisionGroupSet,
-    current_game_objects: Query<(Entity, &MapElement)>,
+    current_game_objects: Query<(Entity, &MapElement, &mut Transform), Without<Pawn>>,
     // meshes: ResMut<Assets<Mesh>>,
     // materials: ResMut<Assets<ColorMaterial>>,
     // mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     // Delete all currently existing map objects.
-    for (entity, _game_object) in &current_game_objects {
+    for (entity, _game_object, _) in &current_game_objects {
         commands.entity(entity).despawn();
     }
 
@@ -122,6 +204,6 @@ pub fn load_map_from_mapinstance(
             ))
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(collision_groups.map_object)
-            .insert(MapElement);
+            .insert(MapElement { object_type: object.object_type, id: object.id.clone() });
     }
 }

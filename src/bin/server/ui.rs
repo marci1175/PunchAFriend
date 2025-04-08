@@ -1,14 +1,13 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use bevy::{
     asset::Assets,
     ecs::{
-        entity::Entity,
-        system::{Commands, Query, Res, ResMut},
+        entity::Entity, query::Without, system::{Commands, Query, Res, ResMut}
     },
     render::mesh::Mesh,
     sprite::ColorMaterial,
-    time::Timer,
+    time::Timer, transform::components::Transform,
 };
 use bevy_egui::{
     egui::{self, Align2, Color32, Layout, RichText},
@@ -16,20 +15,23 @@ use bevy_egui::{
 };
 use bevy_tokio_tasks::TokioTasksRuntime;
 use chrono::{Local, TimeDelta};
+use dashmap::DashMap;
+use parking_lot::Mutex;
 use punchafriend::{
     game::{
         collision::CollisionGroupSet,
-        map::{load_map_from_mapinstance, MapElement, MapNameDiscriminants},
+        map::{load_map_from_mapinstance, MapElement, MapNameDiscriminants, MapObjectUpdate}, pawns::Pawn,
     },
     networking::{
         server::{send_request_to_client, setup_remote_client_handler, ServerInstance},
-        IntermissionData, RemoteServerRequest, ServerGameState,
+        IntermissionData, RemoteServerRequest, ServerGameState, ServerTickUpdate,
     },
     server::ApplicationCtx,
     UiLayer,
 };
 use strum::VariantArray;
-use tokio::sync::mpsc::channel;
+use tokio::{net::{tcp::OwnedWriteHalf, UdpSocket}, sync::mpsc::channel};
+use uuid::Uuid;
 
 use crate::systems::MINUTE_SECS;
 
@@ -40,7 +42,7 @@ pub fn ui_system(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     collision_groups: Res<CollisionGroupSet>,
-    current_map_objects: Query<(Entity, &MapElement)>,
+    current_map_objects: Query<(Entity, &MapElement, &mut Transform), Without<Pawn>>,
     runtime: ResMut<TokioTasksRuntime>,
 ) {
     let ctx = contexts.ctx_mut();
@@ -219,6 +221,32 @@ pub fn create_intermission_data_all() -> IntermissionData {
             .unwrap(),
     );
     intermission_data
+}
+
+pub fn notify_valid_clients_map_change(
+    udp_socket: Arc<UdpSocket>,
+    runtime: &Res<'_, TokioTasksRuntime>,
+    dash_map:  Arc<DashMap<SocketAddr, (Uuid, Arc<Mutex<OwnedWriteHalf>>)>>,
+    map_object_update: MapObjectUpdate,
+) {
+    runtime.spawn_background_task(move |_ctx| async move {
+        // Serialize the packet into bytes so it can be sent later
+        let message_bytes = rmp_serde::to_vec(&ServerTickUpdate::new(punchafriend::networking::TickUpdateType::MapObject(map_object_update))).unwrap();
+        
+        // Get the lenght of the message and turn it into bytes
+        let mut message_length_bytes = (message_bytes.len() as u32).to_be_bytes().to_vec();
+
+        // Append the message bytes to the header
+        message_length_bytes.extend(message_bytes.clone());
+
+        // Get the connected clients list
+        for socket_addr in dash_map.iter() {
+            // Get the handle of the TcpStream established when the client was connecting to the server
+            let socket_addr = socket_addr.key();
+
+            udp_socket.send_to(&message_length_bytes, socket_addr.clone()).await.unwrap();
+        }
+    });
 }
 
 pub fn notify_valid_clients_intermission(

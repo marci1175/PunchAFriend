@@ -2,7 +2,11 @@ use std::time::Duration;
 
 use bevy::{
     ecs::{
-        component::Component, entity::Entity, event::EventReader, query::{Changed, With}, system::{Commands, Query, Res, Resource}
+        component::Component,
+        entity::Entity,
+        event::EventReader,
+        query::{Changed, With},
+        system::{Commands, Query, Res, Resource},
     },
     math::vec2,
     transform::components::Transform,
@@ -11,7 +15,11 @@ use bevy_rapier2d::prelude::{CollisionGroups, Group, Velocity};
 use bevy_tokio_tasks::TokioTasksRuntime;
 use uuid::Uuid;
 
-use crate::{networking::{server::notify_clients_about_stats_changes, ClientStatistics}, server::ApplicationCtx, Direction};
+use crate::{
+    networking::{server::notify_clients_about_stats_changes, ClientStatistics},
+    server::ApplicationCtx,
+    Direction,
+};
 
 use super::{
     combat::{AttackObject, AttackType, Combo},
@@ -132,7 +140,13 @@ pub fn check_for_collision_with_map_and_player(
 pub fn check_for_collision_with_attack_object(
     mut commands: Commands,
     mut collision_events: EventReader<bevy_rapier2d::prelude::CollisionEvent>,
-    mut character_query: Query<(Entity, &mut Pawn, &Transform, &Velocity, &mut LastInteractedPawn)>,
+    mut character_query: Query<(
+        Entity,
+        &mut Pawn,
+        &Transform,
+        &Velocity,
+        &mut LastInteractedPawn,
+    )>,
     attack_object_query: Query<(Entity, &AttackObject)>,
 ) {
     for collision in collision_events.read() {
@@ -149,8 +163,7 @@ pub fn check_for_collision_with_attack_object(
                 let character_query_result = character_query
                     .iter_mut()
                     .find(|(character_entity, _, _, _, _)| {
-                        *character_entity == *entity
-                            || *character_entity == *entity1
+                        *character_entity == *entity || *character_entity == *entity1
                     })
                     .map(|(e, p, t, v, lp)| (e, p.clone(), *t, *v, lp));
 
@@ -225,13 +238,11 @@ pub fn check_for_collision_with_attack_object(
                 let character_query_result = character_query
                     .iter_mut()
                     .find(|(character_entity, _, _, _, _)| {
-                        *character_entity == *entity
-                            || *character_entity == *entity1
+                        *character_entity == *entity || *character_entity == *entity1
                     })
                     .map(|(e, p, t, v, lp)| (e, p.clone(), *t, *v, lp));
 
-                if let Some((_, _, _, _, mut last_interacted_pawn)) = character_query_result
-                {
+                if let Some((_, _, _, _, mut last_interacted_pawn)) = character_query_result {
                     if let Some(attacker_uuid) = &attacker_uuid {
                         last_interacted_pawn.set_last_pawn(*attacker_uuid);
                     }
@@ -241,9 +252,7 @@ pub fn check_for_collision_with_attack_object(
                 entity,
                 entity1,
                 collision_event_flags,
-            ) => {
-                
-            }
+            ) => {}
         };
     }
 
@@ -276,8 +285,7 @@ pub fn check_players_out_of_bounds(
                     .cloned()
                     .collect::<Vec<ClientStatistics>>();
 
-                for mut client in client_stats_list.clone()
-                {
+                for mut client in client_stats_list.clone() {
                     // Find the matching uuid
                     if client.uuid == pawn.id {
                         // Remove the original entry
@@ -321,8 +329,7 @@ pub fn check_players_out_of_bounds(
             }
         }
         // Clone the list handle
-        let connected_clients_clone =
-            server_instance.connected_client_tcp_handles.clone();
+        let connected_clients_clone = server_instance.connected_client_tcp_handles.clone();
 
         // Create an async task for sending the updates to the clients
         runtime.spawn_background_task(async move |_ctx| {

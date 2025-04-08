@@ -2,30 +2,21 @@ pub const MINUTE_SECS: u64 = 60;
 
 use chrono::{Local, TimeDelta};
 use punchafriend::{
-    game::{map::load_map_from_mapinstance, pawns::spawn_pawn},
+    game::{map::{load_map_from_mapinstance, MapObjectUpdate, MovementState}, pawns::spawn_pawn},
     networking::{
-        server::{notify_clients_about_stats_changes, ServerInstance},
-        ClientStatistics, OngoingGameData,
-        ServerGameState::{self, Intermission},
+        server::{notify_clients_about_stats_changes, ServerInstance}, ClientStatistics, OngoingGameData, PawnUpdate, ServerGameState::{self, Intermission}
     },
 };
 use std::{sync::Arc, time::Duration};
 
 use bevy::{
-    asset::Assets,
-    core_pipeline::core_2d::Camera2d,
-    ecs::{
+    asset::Assets, core_pipeline::core_2d::Camera2d, ecs::{
         entity::Entity,
         event::EventReader,
-        query::{Changed, With},
+        query::{Changed, With, Without},
         system::{Commands, Query, Res, ResMut},
         world::Mut,
-    },
-    render::mesh::Mesh,
-    sprite::ColorMaterial,
-    time::{Real, Time, Timer},
-    transform::components::Transform,
-    winit::{UpdateMode, WinitSettings},
+    }, math::{vec2, Vec3}, render::mesh::Mesh, sprite::ColorMaterial, time::{Real, Time, Timer}, transform::components::Transform, winit::{UpdateMode, WinitSettings}
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{KinematicCharacterController, Velocity};
@@ -46,7 +37,7 @@ use punchafriend::{
 };
 use tokio::net::tcp::OwnedWriteHalf;
 
-use crate::ui::{create_intermission_data_all, notify_valid_clients_intermission};
+use crate::ui::{create_intermission_data_all, notify_valid_clients_intermission, notify_valid_clients_map_change};
 
 pub fn recv_tick(
     mut commands: Commands,
@@ -63,7 +54,7 @@ pub fn recv_tick(
     collision_groups: Res<CollisionGroupSet>,
     game_time: Res<Time>,
     real_time: Res<Time<Real>>,
-    current_game_objects: Query<(Entity, &MapElement)>,
+    current_game_objects: Query<(Entity, &MapElement, &mut Transform), Without<Pawn>>,
 ) {
     // Increment global tick counter
     let current_tick_count = app_ctx.tick_count.wrapping_add(1);
@@ -90,7 +81,8 @@ pub fn recv_tick(
                 notify_valid_clients_intermission(&runtime, client_list, intermission_data);
 
                 app_ctx.game_round_timer = None;
-                app_ctx.intermission_timer = Some(Timer::from_seconds(30., bevy::time::TimerMode::Once));
+                app_ctx.intermission_timer =
+                    Some(Timer::from_seconds(30., bevy::time::TimerMode::Once));
             }
         }
     }
@@ -104,7 +96,10 @@ pub fn recv_tick(
     if let Some(timer) = app_ctx.intermission_timer.clone() {
         if let Some(server_instance) = &app_ctx.server_instance {
             // If the countdown has ended or all of the votes have been casted notify all the clients about the intermission end, and send the new map.
-            if timer.finished() || app_ctx.intermission_total_votes == server_instance.connected_client_tcp_handles.len() {
+            if timer.finished()
+                || app_ctx.intermission_total_votes
+                    == server_instance.connected_client_tcp_handles.len()
+            {
                 let game_state = server_instance.game_state.read().clone();
 
                 if let Intermission(intermission_data) = game_state {
@@ -362,7 +357,7 @@ pub fn send_tick(
         for (_entity, player, _, position, velocity) in players_query.iter() {
             // Create a ServerTickUpdate from the data provided by the query
             let server_tick_update =
-                ServerTickUpdate::new(*position, *velocity, player.clone(), current_tick_count);
+                ServerTickUpdate::new(punchafriend::networking::TickUpdateType::Pawn(PawnUpdate::new(*position, *velocity, player.clone(), current_tick_count)));
 
             // Serialize the packet into bytes so it can be sent later
             let message_bytes = rmp_serde::to_vec(&server_tick_update).unwrap();
@@ -430,4 +425,58 @@ pub fn setup_window(
     commands.spawn(Camera2d);
 
     framerate.limiter = Limiter::from_framerate(120.);
+}
+
+pub fn tick(
+    mut map_element_query: Query<(Entity, &mut MapElement, &mut Transform)>,
+    game_time: Res<Time>,
+    runtime: Res<TokioTasksRuntime>,
+    app_ctx: Res<ApplicationCtx>,
+) {
+    if let Some(server_instance) = &app_ctx.server_instance {
+        let connected_clients = server_instance.connected_client_tcp_handles.clone();
+        let udp_socket = server_instance.udp_socket.clone();
+
+        for (_element, mut map_element, mut transform) in map_element_query.iter_mut() {
+            match &mut map_element.object_type {
+                // If the map element is static we dont need to send the updated coordinates to the client
+                punchafriend::game::map::ObjectType::Static => (),
+                punchafriend::game::map::ObjectType::Variable(variable_object) => {
+                    match variable_object.movement_type.clone() {
+                        punchafriend::game::map::ObjectMovementType::Circular(object_movement_type) => {
+    
+                        },
+                        punchafriend::game::map::ObjectMovementType::Linear(object_movement_type) => {
+                            let object_params = variable_object.movement_params.clone();
+    
+                            let total_path_length = object_params.destination_pos - object_params.starting_pos;
+    
+                            let sec_step = total_path_length / object_params.duration.as_secs_f32();
+                            let current_step = sec_step * game_time.delta_secs();
+    
+                            match variable_object.movement_state.clone() {
+                                punchafriend::game::map::MovementState::In => {
+                                    transform.translation += Vec3::new(current_step.x, current_step.y, 0.);
+    
+                                    if transform.translation.x.abs() > object_params.destination_pos.x && transform.translation.y <= object_params.destination_pos.y {
+                                        variable_object.movement_state = MovementState::Out;
+                                    }
+                                },
+                                punchafriend::game::map::MovementState::Out => {
+                                    transform.translation -= Vec3::new(current_step.x, current_step.y, 0.);
+    
+                                    if transform.translation.x.abs() > object_params.destination_pos.x && transform.translation.y >= object_params.destination_pos.y {
+                                        variable_object.movement_state = MovementState::In;
+                                    }
+                                },
+                            }
+
+                            notify_valid_clients_map_change(udp_socket.clone(), &runtime, connected_clients.clone(), MapObjectUpdate {transform: transform.clone(), id: map_element.id.clone() });
+                        },
+                    }
+                },
+            }
+        }
+    }
+    
 }
