@@ -255,7 +255,7 @@ pub fn notify_valid_clients_map_change(
             let socket_addr = socket_addr.key();
 
             udp_socket
-                .send_to(&message_length_bytes, socket_addr.clone())
+                .send_to(&message_length_bytes, *socket_addr)
                 .await
                 .unwrap();
         }

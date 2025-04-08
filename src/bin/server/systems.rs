@@ -2,13 +2,9 @@ pub const MINUTE_SECS: u64 = 60;
 
 use chrono::{Local, TimeDelta};
 use punchafriend::{
-    game::{
-        map::{load_map_from_mapinstance, MapObjectUpdate, MovementState},
-        pawns::spawn_pawn,
-    },
+    game::map::{load_map_from_mapinstance, MapObjectUpdate, MovementState},
     networking::{
-        server::{notify_clients_about_stats_changes, ServerInstance},
-        ClientStatistics, OngoingGameData, PawnUpdate,
+        server::ServerInstance, OngoingGameData, PawnUpdate,
         ServerGameState::{self, Intermission},
     },
 };
@@ -24,7 +20,7 @@ use bevy::{
         system::{Commands, Query, Res, ResMut},
         world::Mut,
     },
-    math::{vec2, Vec3},
+    math::Vec3,
     render::mesh::Mesh,
     sprite::ColorMaterial,
     time::{Real, Time, Timer},
@@ -507,8 +503,8 @@ pub fn tick(
                                 &runtime,
                                 connected_clients.clone(),
                                 MapObjectUpdate {
-                                    transform: transform.clone(),
-                                    id: map_element.id.clone(),
+                                    transform: *transform,
+                                    id: map_element.id,
                                 },
                             );
                         }

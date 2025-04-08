@@ -12,7 +12,7 @@ use bevy::{
     },
     input::{keyboard::KeyCode, ButtonInput},
     math::UVec2,
-    render::{camera::OrthographicProjection, mesh::Mesh},
+    render::mesh::Mesh,
     sprite::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasLayout},
     time::{Time, Timer},
     transform::components::Transform,
@@ -164,7 +164,7 @@ pub fn handle_server_output(
                 punchafriend::networking::TickUpdateType::MapObject(map_object_update) => {
                     for (_, map_element, mut transform) in current_game_objects.iter_mut() {
                         if map_element.id == map_object_update.id {
-                            *transform = map_object_update.transform.clone();
+                            *transform = map_object_update.transform;
 
                             break;
                         }
@@ -363,7 +363,7 @@ pub fn setup_game(
     framerate: ResMut<FramepaceSettings>,
     mut app_ctx: ResMut<'_, ApplicationCtx>,
 ) {
-    let camera = Camera2d::default();
+    let camera = Camera2d;
 
     // Setup graphics
     commands.spawn(camera);
