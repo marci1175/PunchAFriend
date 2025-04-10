@@ -63,7 +63,15 @@ pub fn ui_system(
             // Show RTT when there is an ongoing game
             if let Some(client_connection) = &app_ctx.client_connection {
                 egui::Area::new("rtt_display".into()).show(ctx, |ui| {
-                    ui.label(RichText::from(format!("Ping: {}ms", client_connection.rtt_ms.load(std::sync::atomic::Ordering::Relaxed))).color(Color32::WHITE));
+                    ui.label(
+                        RichText::from(format!(
+                            "Ping: {}ms",
+                            client_connection
+                                .rtt_ms
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                        ))
+                        .color(Color32::WHITE),
+                    );
                 });
             }
 
@@ -76,10 +84,13 @@ pub fn ui_system(
             egui::Area::new("hud".into())
                 .anchor(Align2::CENTER_TOP, vec2(0., 20.))
                 .show(ctx, |ui| {
-                    ui.label(RichText::from(format!(
-                        "Round time: {:.2}s",
-                        time_delta.num_milliseconds() as f32 / 1000.
-                    )).color(Color32::WHITE));
+                    ui.label(
+                        RichText::from(format!(
+                            "Round time: {:.2}s",
+                            time_delta.num_milliseconds() as f32 / 1000.
+                        ))
+                        .color(Color32::WHITE),
+                    );
                 });
 
             // Set the new value of the UiLayer's enum
