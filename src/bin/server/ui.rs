@@ -85,6 +85,24 @@ pub fn ui_system(
 
                         notify_valid_clients_intermission(&runtime, dash_map, intermission_data);
                     }
+
+                    ui.separator();
+
+                    ui.label("Game Timers:");
+
+                    if let Some(intermission_timer) = &app_ctx.intermission_timer {
+                        ui.label(format!(
+                            "Intermission elapsed: {:.2}s",
+                            intermission_timer.elapsed_secs()
+                        ));
+                    }
+
+                    if let Some(game_round_timer) = &app_ctx.game_round_timer {
+                        ui.label(format!(
+                            "Game round elapsed: {:.2}s",
+                            game_round_timer.elapsed_secs()
+                        ));
+                    }
                 }
             });
         }

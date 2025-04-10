@@ -244,6 +244,9 @@ pub fn handle_server_output(
                         app_ctx.ui_layer = UiLayer::Game(ongoing_game_data);
                     }
                 },
+                punchafriend::networking::ServerRequest::RTTMeasurement(_) => {
+                    unreachable!("The RTT measurement should be evaluated by the TCP messsage receiver thread.")
+                }
             }
         }
     } else {
@@ -376,6 +379,7 @@ pub fn setup_game(
         .insert(MapElement {
             object_type: punchafriend::game::map::ObjectType::Static,
             id: Uuid::new_v4(),
+            initial_position: None,
         });
 
     winit_settings.unfocused_mode = UpdateMode::Continuous;

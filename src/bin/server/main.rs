@@ -35,6 +35,7 @@ fn main() {
 
     app.add_systems(Startup, systems::setup_window);
     app.add_systems(Update, ui::ui_system);
+    app.add_systems(Update, systems::frame);
     app.add_systems(FixedUpdate, systems::recv_tick);
     app.add_systems(FixedUpdate, systems::send_tick);
     app.add_systems(FixedUpdate, systems::reset_jump_remaining_for_player);

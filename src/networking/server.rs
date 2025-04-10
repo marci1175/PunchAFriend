@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::{
     game::{collision::CollisionGroupSet, map::MapInstance, pawns::spawn_pawn},
-    networking::{GameInput, RemoteClientRequest, UDP_DATAGRAM_SIZE},
+    networking::{RemoteClientRequest, UDP_DATAGRAM_SIZE},
 };
 
 use super::{
@@ -162,9 +162,10 @@ pub fn setup_remote_client_handler(
 
                         // Save the connected clients handle and ports
                         connected_clients_clone.insert(SocketAddr::new(socket_addr.ip(), client_metadata.game_socket_port), (uuid, Arc::new(Mutex::new(write_half))));
-                        
+
+                        // This shit aint working fix it up!!!!
                         // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
-                        sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
+                        // sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
                         
                         // Clone the cancellation token
                         let cancellation_token_clone = cancellation_token_clone.clone();

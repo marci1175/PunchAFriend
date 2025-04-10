@@ -6,8 +6,8 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{
-    ActiveEvents, AdditionalMassProperties, Ccd, Collider, CollisionGroups,
-    KinematicCharacterController, LockedAxes, RigidBody, Velocity,
+    ActiveEvents, AdditionalMassProperties, Ccd, CharacterLength, Collider, CollisionGroups,
+    Friction, KinematicCharacterController, LockedAxes, RigidBody, Velocity,
 };
 use rand::rngs::SmallRng;
 use std::time::Duration;
@@ -229,6 +229,7 @@ impl Pawn {
     Debug,
     strum::EnumCount,
     strum::VariantArray,
+    strum::Display,
 )]
 pub enum PawnType {
     #[default]
@@ -267,9 +268,11 @@ pub fn spawn_pawn(commands: &mut Commands, uuid: Uuid, collision_group: Collisio
         .insert(Transform::from_xyz(0., 100., 0.))
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(AdditionalMassProperties::Mass(0.1))
+        .insert(AdditionalMassProperties::Mass(1.))
+        .insert(Friction::coefficient(1.))
         .insert(KinematicCharacterController {
             apply_impulse_to_dynamic_bodies: false,
+            snap_to_ground: Some(CharacterLength::Relative(0.2)),
             ..Default::default()
         })
         .insert(collision_group)

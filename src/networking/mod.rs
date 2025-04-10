@@ -23,6 +23,8 @@ pub struct RemoteClientGameRequest {
     /// The input of the clients connected to the server.
     /// Multiple inputs can be input at once.
     pub inputs: Vec<GameInput>,
+    /// Time timestamp whem the client has sent this request, this can be used to measure RTT.
+    pub timestamp: DateTime<Utc>,
 }
 
 /// This message type is used by the clients to send important information to the server.
@@ -56,6 +58,8 @@ pub enum ServerRequest {
     ServerGameStateControl(ServerGameState),
 
     PlayersStatisticsChange(Vec<ClientStatistics>),
+
+    RTTMeasurement(DateTime<Utc>),
 }
 
 /// The types of GameStates which a server can request a client to enter.
@@ -93,6 +97,8 @@ pub enum ClientRequest {
     /// This message is sent if the game is currently in an intermission state, where players can vote on the next map.
     /// The inner value contain the name of the map the clients wants to vote on.
     Vote(MapNameDiscriminants),
+
+    RTTMeasurement(DateTime<Utc>),
 }
 
 /// The message the server sends to all the clients, to share all the important information about the current intermission. ie.: Maps available for voting, duration of the intermission.

@@ -10,7 +10,7 @@ use bevy::{
     math::{vec2, Vec2},
     transform::components::Transform,
 };
-use bevy_rapier2d::prelude::{ActiveEvents, Collider};
+use bevy_rapier2d::prelude::{ActiveEvents, Ccd, Collider, Friction, Restitution};
 use uuid::Uuid;
 
 use super::{collision::CollisionGroupSet, pawns::Pawn};
@@ -21,12 +21,12 @@ use super::{collision::CollisionGroupSet, pawns::Pawn};
 pub struct MapElement {
     pub id: Uuid,
     pub object_type: ObjectType,
+    pub initial_position: Option<Vec2>,
 }
 
 #[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct VariableObject {
-    pub movement_params: ObjectMovementParam,
-    pub movement_type: ObjectMovementType,
+    pub movement_type: ObjectMovement,
     pub movement_state: MovementState,
 }
 
@@ -45,9 +45,37 @@ pub struct ObjectMovementParam {
 }
 
 #[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum ObjectMovementType {
-    Circular(Option<Box<ObjectMovementType>>),
-    Linear(Option<Box<ObjectMovementType>>),
+pub enum ObjectMovement {
+    Circular(Option<Box<ObjectMovement>>, movement_parameters::Circular),
+    Linear(Option<Box<ObjectMovement>>, movement_parameters::Linear),
+}
+
+pub mod movement_parameters {
+    use std::time::Duration;
+
+    use bevy::math::Vec2;
+
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+    pub struct Linear {
+        /// The destination coordinates where this [`super::VariableObject`] is headed to.
+        /// The delta movement is caluclated by the subtraction of the destination and the starting position divided by the time we have.
+        pub destination_pos: Vec2,
+
+        /// The amount of time it is going to take for the object to reach the `destination_pos`.
+        pub duration: Duration,
+    }
+
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+    pub struct Circular {
+        pub center_pos: Vec2,
+
+        pub radius: f32,
+
+        pub angle: f32,
+
+        /// The amount of time it is going to take for the object make a full circle.
+        pub duration: Duration,
+    }
 }
 
 #[derive(Component, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -129,13 +157,33 @@ impl MapInstance {
             position: vec2(300., -200.),
             texture_name: String::new(),
             object_type: ObjectType::Variable(VariableObject {
-                movement_params: ObjectMovementParam {
-                    starting_pos: vec2(250., -200.),
-                    destination_pos: vec2(350., -200.),
-                    duration: Duration::from_secs(2),
-                },
                 movement_state: MovementState::In,
-                movement_type: ObjectMovementType::Linear(None),
+                movement_type: ObjectMovement::Linear(
+                    None,
+                    movement_parameters::Linear {
+                        destination_pos: vec2(350., -200.),
+                        duration: Duration::from_secs(2),
+                    },
+                ),
+            }),
+        });
+
+        map_objects.push(MapObject {
+            id: Uuid::new_v4(),
+            size: vec2(50., 20.),
+            position: vec2(300., -200.),
+            texture_name: String::new(),
+            object_type: ObjectType::Variable(VariableObject {
+                movement_state: MovementState::In,
+                movement_type: ObjectMovement::Circular(
+                    None,
+                    movement_parameters::Circular {
+                        center_pos: vec2(300., 0.),
+                        radius: 50.,
+                        angle: 0.0,
+                        duration: Duration::from_secs_f32(4.0),
+                    },
+                ),
             }),
         });
 
@@ -199,7 +247,8 @@ pub fn load_map_from_mapinstance(
 
     for object in map_instance.objects {
         commands
-            .spawn(Collider::cuboid(object.size.x, object.size.y))
+            .spawn(bevy_rapier2d::prelude::RigidBody::KinematicPositionBased)
+            .insert(Collider::cuboid(object.size.x, object.size.y))
             .insert(Transform::from_xyz(
                 object.position.x,
                 object.position.y,
@@ -207,9 +256,13 @@ pub fn load_map_from_mapinstance(
             ))
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(collision_groups.map_object)
+            .insert(Ccd::enabled())
+            .insert(Restitution::coefficient(0.))
+            .insert(Friction::coefficient(1.))
             .insert(MapElement {
                 object_type: object.object_type,
                 id: object.id,
+                initial_position: Some(object.position),
             });
     }
 }

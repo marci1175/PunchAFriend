@@ -1,6 +1,12 @@
-use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    net::SocketAddr,
+    sync::{atomic::AtomicI64, Arc},
+    time::Duration,
+};
 
 use bevy::ecs::system::Resource;
+use chrono::Local;
 use parking_lot::RwLock;
 use tokio::{
     io::AsyncReadExt,
@@ -31,6 +37,8 @@ pub struct ClientConnection {
     pub remote_server_sender: Sender<RemoteClientRequest>,
 
     pub connected_clients_stats: Arc<RwLock<BTreeSet<ClientStatistics>>>,
+
+    pub rtt_ms: Arc<AtomicI64>,
 }
 
 impl ClientConnection {
@@ -64,11 +72,15 @@ impl ClientConnection {
         // Create a new channel pair for sending messages to the remote server
         let (remote_server_sender, remote_server_receiver) = channel::<RemoteClientRequest>(2000);
 
+        let rtt_ms = Arc::new(AtomicI64::new(0));
+
         setup_server_handler(
             tcp_stream,
             cancellation_token.clone(),
             remote_sender,
             remote_server_receiver,
+            rtt_ms.clone(),
+            server_metadata.client_uuid,
         )
         .await;
 
@@ -102,6 +114,7 @@ impl ClientConnection {
             remote_receiver,
             remote_server_sender,
             connected_clients_stats: Arc::new(RwLock::new(BTreeSet::new())),
+            rtt_ms,
         })
     }
 }
@@ -166,6 +179,8 @@ async fn setup_server_handler(
     cancellation_token: CancellationToken,
     remote_server_sender: Sender<RemoteServerRequest>,
     mut remote_client_receiver: Receiver<RemoteClientRequest>,
+    rtt_ms: Arc<AtomicI64>,
+    uuid: Uuid,
 ) {
     tokio::spawn(async move {
         loop {
@@ -190,7 +205,29 @@ async fn setup_server_handler(
 
                     let request = rmp_serde::from_slice::<RemoteServerRequest>(&buf).unwrap();
 
-                    remote_server_sender.send(request).await.unwrap();
+                    if let crate::networking::ServerRequest::RTTMeasurement(timestamp) = &request.request {
+                        let time_delta = Local::now().to_utc().signed_duration_since(timestamp);
+
+                        let rtt_ms_fetched = time_delta.num_milliseconds();
+
+                        rtt_ms.store(rtt_ms_fetched, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    else {
+                        remote_server_sender.send(request).await.unwrap();
+                    }
+                }
+
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                    let sendable_message = RemoteClientRequest {
+                        id: uuid,
+                        request: crate::networking::ClientRequest::RTTMeasurement(Local::now().to_utc()),
+                    };
+
+                    // Serialize the message
+                    let buf = rmp_serde::to_vec(&sendable_message).unwrap();
+
+                    // Write the received message to the TcpStream for the server to receive it.
+                    write_to_buf_with_len(&mut tcp_stream, &buf).await.unwrap();
                 }
             }
         }
@@ -229,6 +266,7 @@ async fn send_game_action(send: Arc<UdpSocket>, game_input: Vec<GameInput>, uuid
     let message_bytes = rmp_serde::to_vec(&RemoteClientGameRequest {
         id: uuid,
         inputs: game_input,
+        timestamp: chrono::Local::now().to_utc(),
     })
     .unwrap();
 

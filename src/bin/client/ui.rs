@@ -12,7 +12,7 @@ use bevy::{
     transform::components::Transform,
 };
 use bevy_egui::{
-    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, Sense, Slider},
+    egui::{self, vec2, Align2, Color32, Grid, Layout, Pos2, RichText, ScrollArea, Sense, Slider},
     EguiContexts,
 };
 use bevy_framepace::{FramepaceSettings, Limiter};
@@ -22,10 +22,14 @@ use chrono::Local;
 use egui_extras::{Column, TableBuilder};
 use punchafriend::{
     client::ApplicationCtx,
-    game::{collision::CollisionGroupSet, pawns::Pawn},
+    game::{
+        collision::CollisionGroupSet,
+        pawns::{Pawn, PawnType},
+    },
     networking::{client::ClientConnection, RemoteClientRequest},
     PauseWindowState, UiLayer,
 };
+use strum::VariantArray;
 
 use crate::systems::reset_connection_and_ui;
 
@@ -56,6 +60,13 @@ pub fn ui_system(
     // Match the UiLayer enum's state
     match app_ctx.ui_layer.clone() {
         UiLayer::Game(ongoing_game_data) => {
+            // Show RTT when there is an ongoing game
+            if let Some(client_connection) = &app_ctx.client_connection {
+                egui::Area::new("rtt_display".into()).show(ctx, |ui| {
+                    ui.label(format!("Ping: {}ms", client_connection.rtt_ms.load(std::sync::atomic::Ordering::Relaxed)));
+                });
+            }
+
             // How much time is left from the round
             let time_delta = ongoing_game_data
                 .round_end_date
@@ -206,6 +217,28 @@ pub fn ui_system(
                 });
 
                 ui.separator();
+
+                ui.label("Select a character:");
+
+                ScrollArea::horizontal().show(ui, |ui| {
+                    ui.horizontal_centered(|ui| {
+                        for pawn_type in PawnType::VARIANTS {
+                            ui.group(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.allocate_ui(vec2(60., 70.), |ui| {
+                                        ui.label(pawn_type.to_string());
+            
+                                        ui.image(egui::include_image!("../../../assets/pawn_imgs/test.png"));
+                                    
+                                        if ui.button("Select").clicked() {
+
+                                        };
+                                    });
+                                });  
+                            });
+                        }
+                    });
+                });
             });
 
             // Set the innter value of the ui_layer
