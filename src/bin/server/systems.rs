@@ -623,7 +623,8 @@ pub fn frame(
                                             )),
                                         },
                                         connected_clients_clone,
-                                    ).await;
+                                    )
+                                    .await;
                                 });
                             } else {
                                 eprintln!(
