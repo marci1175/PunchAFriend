@@ -243,7 +243,7 @@ pub fn ui_system(
                                     
                                         if ui.button("Select").clicked() {
                                             if let Some(client_connection) = &app_ctx.client_connection {
-                                                let _ = client_connection.remote_server_sender.try_send(RemoteClientRequest {uuid: client_connection.server_metadata.client_uuid.clone(), request: punchafriend::networking::ClientRequest::PawnTypeChange(*pawn_type)});
+                                                let _ = client_connection.remote_server_sender.try_send(RemoteClientRequest {uuid: client_connection.server_metadata.client_uuid, request: punchafriend::networking::ClientRequest::PawnTypeChange(*pawn_type)});
                                             }
                                         };
                                     });

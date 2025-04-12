@@ -609,7 +609,7 @@ pub fn frame(
                                 .iter_mut()
                                 .find(|(_e, pawn, ..)| pawn.uuid == message.uuid)
                             {
-                                pawn.pawn_type = desired_pawn_type.clone();
+                                pawn.pawn_type = desired_pawn_type;
 
                                 let connected_clients_clone =
                                     server_instance.connected_client_tcp_handles.clone();
