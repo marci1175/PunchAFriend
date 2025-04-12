@@ -182,7 +182,7 @@ pub struct Pawn {
 
     pub combo_stats: Option<Combo>,
 
-    pub id: Uuid,
+    pub uuid: Uuid,
 
     pub pawn_attributes: PawnAttribute,
 
@@ -215,7 +215,7 @@ impl Pawn {
 
     pub fn new_from_id(id: Uuid) -> Self {
         Self {
-            id,
+            uuid: id,
             ..Default::default()
         }
     }
@@ -224,6 +224,7 @@ impl Pawn {
 #[derive(
     Default,
     Clone,
+    Copy,
     serde::Deserialize,
     serde::Serialize,
     Debug,
@@ -240,11 +241,49 @@ pub enum PawnType {
     Schoolgirl,
 }
 
+impl PawnType {
+    pub fn into_pawn_attribute(&self) -> PawnAttribute {
+        match self {
+            PawnType::Knight => PawnAttribute {
+                speed: 0.8,
+                jump_height: 0.8,
+                attack_speed: 0.6,
+                attack_knockback: 1.8,
+            },
+            PawnType::Ninja => PawnAttribute {
+                speed: 1.7,
+                jump_height: 2.,
+                attack_speed: 1.6,
+                attack_knockback: 0.6,
+            },
+            PawnType::Soldier => PawnAttribute {
+                speed: 1.0,
+                jump_height: 1.0,
+                attack_speed: 1.0,
+                attack_knockback: 1.0,
+            },
+            PawnType::Human => PawnAttribute {
+                speed: 1.4,
+                jump_height: 1.4,
+                attack_speed: 1.0,
+                attack_knockback: 0.2,
+            },
+            PawnType::Schoolgirl => PawnAttribute {
+                speed: 1.8,
+                jump_height: 1.0,
+                attack_speed: 2.0,
+                attack_knockback: 0.3,
+            },
+        }
+    }
+}
+
 #[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
 pub struct PawnAttribute {
     pub speed: f32,
     pub jump_height: f32,
     pub attack_speed: f32,
+    pub attack_knockback: f32,
 }
 
 impl Default for PawnAttribute {
@@ -253,6 +292,7 @@ impl Default for PawnAttribute {
             speed: 1.,
             jump_height: 1.,
             attack_speed: 1.,
+            attack_knockback: 1.,
         }
     }
 }

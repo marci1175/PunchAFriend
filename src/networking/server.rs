@@ -165,7 +165,7 @@ pub fn setup_remote_client_handler(
 
                         // This shit aint working fix it up!!!!
                         // Try sending a made up client request to the server's client handler, so that if a client joins it will already send every information present for them even if theyre not moving.
-                        // sender.send((RemoteClientGameRequest {id: uuid, inputs: vec![GameInput::Join]}, socket_addr)).await.unwrap_or_default();
+                        tcp_sender.send((RemoteClientRequest {uuid, request: crate::networking::ClientRequest::ClientPawnSync}, socket_addr)).await.unwrap_or_default();
                         
                         // Clone the cancellation token
                         let cancellation_token_clone = cancellation_token_clone.clone();
@@ -177,7 +177,7 @@ pub fn setup_remote_client_handler(
                         connected_clients_stats.write().insert(new_statistics_field.clone());
 
                         // Notify all the clients about the new field
-                        notify_clients_about_stats_changes(vec![new_statistics_field], connected_clients_clone.clone()).await;
+                        send_request_to_all_clients(RemoteServerRequest { request: ServerRequest::PlayersStatisticsChange(vec![new_statistics_field]) }, connected_clients_clone.clone()).await;
 
                         // Clone the TcpSender
                         let tcp_sender = tcp_sender.clone();
@@ -310,21 +310,8 @@ pub async fn send_request_to_client(
     Ok(())
 }
 
-pub async fn notify_client_about_player_stats_changes(
-    write_half: &mut OwnedWriteHalf,
-    new_clients_stats: Vec<ClientStatistics>,
-) -> anyhow::Result<()> {
-    let message = RemoteServerRequest {
-        request: ServerRequest::PlayersStatisticsChange(new_clients_stats),
-    };
-
-    write_to_buf_with_len(write_half, &rmp_serde::to_vec(&message)?).await?;
-
-    Ok(())
-}
-
-pub async fn notify_clients_about_stats_changes(
-    clients: Vec<ClientStatistics>,
+pub async fn send_request_to_all_clients(
+    request: RemoteServerRequest,
     connected_clients_clone: Arc<
         dashmap::DashMap<
             std::net::SocketAddr,
@@ -340,9 +327,13 @@ pub async fn notify_clients_about_stats_changes(
         // Get the handle of the TcpStream established when the client was connecting to the server
         let (_, tcp_stream) = connected_client.value();
 
-        // Send statstics update message on the TcpStream specified
-        notify_client_about_player_stats_changes(&mut tcp_stream.lock(), clients.clone())
-            .await
-            .unwrap();
+        let owned_write_half = &mut *tcp_stream.lock();
+
+        write_to_buf_with_len(
+            owned_write_half,
+            &rmp_serde::to_vec(&request.clone()).unwrap(),
+        )
+        .await
+        .unwrap();
     }
 }

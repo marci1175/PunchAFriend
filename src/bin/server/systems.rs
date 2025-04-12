@@ -4,9 +4,10 @@ use chrono::{Local, TimeDelta};
 use punchafriend::{
     game::map::{load_map_from_mapinstance, MapObjectUpdate, MovementState},
     networking::{
-        server::ServerInstance,
+        server::{send_request_to_all_clients, ServerInstance},
         OngoingGameData, PawnUpdate,
         ServerGameState::{self, Intermission},
+        ServerRequest,
     },
 };
 use std::{f32::consts::PI, sync::Arc, time::Duration};
@@ -84,7 +85,7 @@ pub fn recv_tick(
                 // Iter over all the clients so we know which one has sent it
                 'query_loop: for mut query_item in players_query.iter_mut() {
                     // If the current player we are iterating on doesn't match the id provided by the client request countinue the iteration.
-                    if query_item.1.id != client_req.id {
+                    if query_item.1.uuid != client_req.id {
                         continue;
                     }
 
@@ -421,6 +422,16 @@ pub fn frame(
     runtime: ResMut<TokioTasksRuntime>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
+    mut players_query: Query<
+        (
+            Entity,
+            Mut<Pawn>,
+            Mut<KinematicCharacterController>,
+            &Transform,
+            &Velocity,
+        ),
+        Without<MapElement>,
+    >,
     collision_groups: Res<CollisionGroupSet>,
 ) {
     // Increment the round timer, to know when does this round finish
@@ -556,7 +567,7 @@ pub fn frame(
                                             .get(&socket_addr)
                                         {
                                             let (_, tcp_write) = handle.value();
-                        
+
                                             send_request_to_client(
                                                 &mut tcp_write.lock(), 
                                                 RemoteServerRequest {
@@ -581,11 +592,72 @@ pub fn frame(
                                     .get(&socket_addr)
                                 {
                                     let (_, tcp_write) = handle.value();
-                
+
                                     send_request_to_client(
                                         &mut tcp_write.lock(), 
                                         RemoteServerRequest {
                                             request: punchafriend::networking::ServerRequest::RTTMeasurement(timestamp)
+                                        }
+                                    ).await.unwrap();
+                                }
+                            });
+                        }
+                        punchafriend::networking::ClientRequest::PawnTypeChange(
+                            desired_pawn_type,
+                        ) => {
+                            if let Some((_entity, mut pawn, ..)) = players_query
+                                .iter_mut()
+                                .find(|(_e, pawn, ..)| pawn.uuid == message.uuid)
+                            {
+                                pawn.pawn_type = desired_pawn_type.clone();
+
+                                let connected_clients_clone =
+                                    server_instance.connected_client_tcp_handles.clone();
+
+                                runtime.spawn_background_task(async move |_ctx| {
+                                    send_request_to_all_clients(
+                                        RemoteServerRequest {
+                                            request: ServerRequest::PawnTypeChange((
+                                                message.uuid,
+                                                desired_pawn_type,
+                                            )),
+                                        },
+                                        connected_clients_clone,
+                                    ).await;
+                                });
+                            } else {
+                                eprintln!(
+                                    "`PawnType` change requested, but client not found at uuid."
+                                )
+                            }
+                        }
+                        punchafriend::networking::ClientRequest::ClientPawnSync => {
+                            let mut pawn_updates: Vec<PawnUpdate> = vec![];
+
+                            for (_entity, pawn, _controller, transform, velocity) in
+                                players_query.iter()
+                            {
+                                pawn_updates.push(PawnUpdate::new(
+                                    *transform,
+                                    *velocity,
+                                    pawn.clone(),
+                                    1,
+                                ));
+                            }
+
+                            let connected_client_tcp_handles =
+                                server_instance.connected_client_tcp_handles.clone();
+
+                            runtime.spawn_background_task(async move |_ctx| {
+                                if let Some(handle) = connected_client_tcp_handles
+                                    .get(&socket_addr)
+                                {
+                                    let (_, tcp_write) = handle.value();
+
+                                    send_request_to_client(
+                                        &mut tcp_write.lock(), 
+                                        RemoteServerRequest {
+                                            request: punchafriend::networking::ServerRequest::ClientPawnSync(pawn_updates)
                                         }
                                     ).await.unwrap();
                                 }

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::game::{
     map::{MapInstance, MapNameDiscriminants, MapObjectUpdate},
-    pawns::Pawn,
+    pawns::{Pawn, PawnType},
 };
 
 pub mod client;
@@ -33,7 +33,7 @@ pub struct RemoteClientGameRequest {
 pub struct RemoteClientRequest {
     /// The id of the client who has sent the message.
     /// IDs are handed out to the clients on connection.
-    pub id: Uuid,
+    pub uuid: Uuid,
     /// The request sent by the client to the server.
     pub request: ClientRequest,
 }
@@ -60,6 +60,10 @@ pub enum ServerRequest {
     PlayersStatisticsChange(Vec<ClientStatistics>),
 
     RTTMeasurement(DateTime<Utc>),
+
+    ClientPawnSync(Vec<PawnUpdate>),
+
+    PawnTypeChange((Uuid, PawnType)),
 }
 
 /// The types of GameStates which a server can request a client to enter.
@@ -99,6 +103,10 @@ pub enum ClientRequest {
     Vote(MapNameDiscriminants),
 
     RTTMeasurement(DateTime<Utc>),
+
+    PawnTypeChange(PawnType),
+
+    ClientPawnSync,
 }
 
 /// The message the server sends to all the clients, to share all the important information about the current intermission. ie.: Maps available for voting, duration of the intermission.

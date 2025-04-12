@@ -50,7 +50,7 @@ pub fn handle_last_entity_transform(
 
 pub fn handle_server_output(
     mut app_ctx: ResMut<'_, ApplicationCtx>,
-    mut players: Query<
+    mut pawns: Query<
         '_,
         '_,
         (
@@ -76,7 +76,7 @@ pub fn handle_server_output(
         while let Ok(server_tick_update) = client_connection.server_tick_receiver.try_recv() {
             match &server_tick_update.tick_update_type {
                 punchafriend::networking::TickUpdateType::Pawn(pawn_update) => {
-                    if !players.iter_mut().any(
+                    if !pawns.iter_mut().any(
                         |(
                             _e,
                             mut player,
@@ -88,7 +88,7 @@ pub fn handle_server_output(
                             _last_transform_state,
                         )| {
                             // Check if the player was found
-                            let player_found = player.id == pawn_update.player.id;
+                            let player_found = player.uuid == pawn_update.player.uuid;
 
                             // If the entity was not found we spawn a new one
                             if !player_found {
@@ -136,27 +136,15 @@ pub fn handle_server_output(
 
                         let starting_anim_idx = animation_state.animation_idx;
 
-                        commands
-                            .spawn(RigidBody::Dynamic)
-                            .insert(Collider::cuboid(20.0, 30.0))
-                            .insert(pawn_update.position)
-                            .insert(AdditionalMassProperties::Mass(0.1))
-                            .insert(ActiveEvents::COLLISION_EVENTS)
-                            .insert(LockedAxes::ROTATION_LOCKED)
-                            .insert(collision_groups.pawn)
-                            .insert(Velocity::default())
-                            .insert(UniqueLastTickCount::new(0))
-                            .insert(Ccd::enabled())
-                            .insert(animation_state)
-                            .insert(LastTransformState::default())
-                            .insert(Sprite::from_atlas_image(
-                                asset_server.load("../assets/idle.png"),
-                                TextureAtlas {
-                                    layout,
-                                    index: starting_anim_idx,
-                                },
-                            ))
-                            .insert(pawn_update.player.clone());
+                        spawn_pawn(
+                            &mut commands,
+                            &collision_groups,
+                            &asset_server,
+                            &layout,
+                            pawn_update,
+                            animation_state,
+                            starting_anim_idx,
+                        );
 
                         break;
                     }
@@ -174,7 +162,7 @@ pub fn handle_server_output(
         }
 
         for (_, _, transform, _, _, mut sprite, mut anim_state, last_transform_state) in
-            players.iter_mut()
+            pawns.iter_mut()
         {
             if *last_transform_state.get_inner() == *transform {
                 sprite.image = asset_server.load("../assets/idle.png");
@@ -188,9 +176,9 @@ pub fn handle_server_output(
             match remote_request.request {
                 punchafriend::networking::ServerRequest::PlayerDisconnect(uuid) => {
                     // Find the Entity with the designated uuid
-                    for (entity, player, _, _, _, _, _, _) in players.iter() {
+                    for (entity, player, _, _, _, _, _, _) in pawns.iter() {
                         // Check for the correct uuid
-                        if player.id == uuid {
+                        if player.uuid == uuid {
                             // Despawn the entity
                             commands.entity(entity).despawn();
 
@@ -247,6 +235,45 @@ pub fn handle_server_output(
                 punchafriend::networking::ServerRequest::RTTMeasurement(_) => {
                     unreachable!("The RTT measurement should be evaluated by the TCP messsage receiver thread.")
                 }
+                punchafriend::networking::ServerRequest::ClientPawnSync(pawn_updates) => {
+                    // Iterate over all of the players
+                    for (entity, _, _, _, _, _, _, _) in pawns.iter() {
+                        // Despawn all of the existing players, to clear out players left from a different match
+                        commands.entity(entity).despawn();
+                    }
+
+                    let animation_state = AnimationState::new(
+                        Timer::new(
+                            Duration::from_secs_f32(0.1),
+                            bevy::time::TimerMode::Repeating,
+                        ),
+                        1,
+                        0,
+                    );
+
+                    for pawn_update in pawn_updates {
+                        spawn_pawn(
+                            &mut commands,
+                            &collision_groups,
+                            &asset_server,
+                            &layout,
+                            &pawn_update,
+                            animation_state.clone(),
+                            0,
+                        );
+                    }
+                }
+                punchafriend::networking::ServerRequest::PawnTypeChange((
+                    modified_pawn_uuid,
+                    desired_pawn_type,
+                )) => {
+                    if let Some((_, mut pawn, ..)) = pawns
+                        .iter_mut()
+                        .find(|(_, pawn, ..)| pawn.uuid == modified_pawn_uuid)
+                    {
+                        pawn.pawn_type = desired_pawn_type;
+                    }
+                }
             }
         }
     } else {
@@ -255,7 +282,7 @@ pub fn handle_server_output(
             match connection {
                 Ok(client_connection) => {
                     // Iterate over all of the players
-                    for (entity, _, _, _, _, _, _, _) in players.iter() {
+                    for (entity, _, _, _, _, _, _, _) in pawns.iter() {
                         // Despawn all of the existing players, to clear out players left from a different match
                         commands.entity(entity).despawn();
                     }
@@ -278,6 +305,42 @@ pub fn handle_server_output(
             }
         }
     }
+
+    for (_, pawn, ..) in pawns.iter() {
+        // dbg!(pawn.pawn_type);
+    }
+}
+
+fn spawn_pawn(
+    commands: &mut Commands<'_, '_>,
+    collision_groups: &Res<'_, CollisionGroupSet>,
+    asset_server: &Res<'_, AssetServer>,
+    layout: &bevy::asset::Handle<TextureAtlasLayout>,
+    pawn_update: &punchafriend::networking::PawnUpdate,
+    animation_state: AnimationState,
+    starting_anim_idx: usize,
+) {
+    commands
+        .spawn(RigidBody::Dynamic)
+        .insert(Collider::cuboid(20.0, 30.0))
+        .insert(pawn_update.position)
+        .insert(AdditionalMassProperties::Mass(0.1))
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(LockedAxes::ROTATION_LOCKED)
+        .insert(collision_groups.pawn)
+        .insert(Velocity::default())
+        .insert(UniqueLastTickCount::new(0))
+        .insert(Ccd::enabled())
+        .insert(animation_state)
+        .insert(LastTransformState::default())
+        .insert(Sprite::from_atlas_image(
+            asset_server.load("../assets/idle.png"),
+            TextureAtlas {
+                layout: layout.clone(),
+                index: starting_anim_idx,
+            },
+        ))
+        .insert(pawn_update.player.clone());
 }
 
 pub fn handle_user_input(

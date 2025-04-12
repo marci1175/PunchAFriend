@@ -33,11 +33,15 @@ pub enum PauseWindowState {
 
 pub mod server {
 
+    
+
     use bevy::{ecs::system::Resource, time::Timer};
 
+    
     use rand::{rngs::SmallRng, SeedableRng};
     use tokio::sync::mpsc::{channel, Receiver};
     use tokio_util::sync::CancellationToken;
+    
 
     use crate::{networking::server::ServerInstance, UiLayer};
 
@@ -68,6 +72,7 @@ pub mod server {
         pub intermission_total_votes: usize,
 
         pub game_round_timer: Option<Timer>,
+        // pub pawn_types: Arc<DashMap<Uuid, PawnType>>
     }
 
     impl Default for ApplicationCtx {

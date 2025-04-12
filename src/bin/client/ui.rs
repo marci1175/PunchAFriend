@@ -207,7 +207,7 @@ pub fn ui_system(
                                             if ui.button("Vote").clicked() {
                                                 if let Some(client_connection) = &app_ctx.client_connection {
                                                     client_connection.remote_server_sender.try_send(RemoteClientRequest {
-                                                        id: client_connection.server_metadata.client_uuid,
+                                                        uuid: client_connection.server_metadata.client_uuid,
                                                         request: punchafriend::networking::ClientRequest::Vote(*map),
                                                     }).unwrap();
                                                 }
@@ -236,13 +236,15 @@ pub fn ui_system(
                         for pawn_type in PawnType::VARIANTS {
                             ui.group(|ui| {
                                 ui.vertical(|ui| {
-                                    ui.allocate_ui(vec2(60., 70.), |ui| {
+                                    ui.allocate_ui(vec2(60., 40.), |ui| {
                                         ui.label(pawn_type.to_string());
             
                                         ui.image(egui::include_image!("../../../assets/pawn_imgs/test.png"));
                                     
                                         if ui.button("Select").clicked() {
-
+                                            if let Some(client_connection) = &app_ctx.client_connection {
+                                                let _ = client_connection.remote_server_sender.try_send(RemoteClientRequest {uuid: client_connection.server_metadata.client_uuid.clone(), request: punchafriend::networking::ClientRequest::PawnTypeChange(*pawn_type)});
+                                            }
                                         };
                                     });
                                 });  

@@ -16,7 +16,7 @@ use bevy_tokio_tasks::TokioTasksRuntime;
 use uuid::Uuid;
 
 use crate::{
-    networking::{server::notify_clients_about_stats_changes, ClientStatistics},
+    networking::{server::send_request_to_all_clients, ClientStatistics, RemoteServerRequest},
     server::ApplicationCtx,
     Direction,
 };
@@ -211,7 +211,7 @@ pub fn check_for_collision_with_attack_object(
                             local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
                         }
 
-                        attacker_uuid = Some(local_player.id)
+                        attacker_uuid = Some(local_player.uuid)
                     }
 
                     colliding_entity_commands.insert(Velocity {
@@ -287,7 +287,7 @@ pub fn check_players_out_of_bounds(
 
                 for mut client in client_stats_list.clone() {
                     // Find the matching uuid
-                    if client.uuid == pawn.id {
+                    if client.uuid == pawn.uuid {
                         // Remove the original entry
                         client_stats_list_handle.remove(&client.clone());
 
@@ -323,19 +323,27 @@ pub fn check_players_out_of_bounds(
                         commands.entity(e).despawn();
 
                         // Respawn the pawn
-                        spawn_pawn(&mut commands, pawn.id, collision_groups.pawn);
+                        spawn_pawn(&mut commands, pawn.uuid, collision_groups.pawn);
                     }
                 }
             }
         }
         // Clone the list handle
         let connected_clients_clone = server_instance.connected_client_tcp_handles.clone();
-
-        // Create an async task for sending the updates to the clients
-        runtime.spawn_background_task(async move |_ctx| {
-            // Notify all the clients about the new entries
-            notify_clients_about_stats_changes(modified_client_stats, connected_clients_clone)
+        if !modified_client_stats.is_empty() {
+            // Create an async task for sending the updates to the clients
+            runtime.spawn_background_task(async move |_ctx| {
+                // Notify all the clients about the new entries
+                send_request_to_all_clients(
+                    RemoteServerRequest {
+                        request: crate::networking::ServerRequest::PlayersStatisticsChange(
+                            modified_client_stats,
+                        ),
+                    },
+                    connected_clients_clone,
+                )
                 .await;
-        });
+            });
+        }
     }
 }

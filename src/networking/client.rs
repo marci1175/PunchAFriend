@@ -182,7 +182,11 @@ async fn setup_server_handler(
     rtt_ms: Arc<AtomicI64>,
     uuid: Uuid,
 ) {
+    // Spawn a server handler thread
     tokio::spawn(async move {
+        // Send rtt measurement packet before handling all the messages
+        send_rtt_measurement(uuid, &mut tcp_stream).await;
+
         loop {
             select! {
                 _ = cancellation_token.cancelled() => {
@@ -191,6 +195,7 @@ async fn setup_server_handler(
 
                 // Try to receive a sendable message
                 Some(sendable_message) = remote_client_receiver.recv() => {
+
                     // Serialize the message
                     let buf = rmp_serde::to_vec(&sendable_message).unwrap();
 
@@ -218,20 +223,24 @@ async fn setup_server_handler(
                 }
 
                 _ = tokio::time::sleep(Duration::from_secs(10)) => {
-                    let sendable_message = RemoteClientRequest {
-                        id: uuid,
-                        request: crate::networking::ClientRequest::RTTMeasurement(Local::now().to_utc()),
-                    };
-
-                    // Serialize the message
-                    let buf = rmp_serde::to_vec(&sendable_message).unwrap();
-
-                    // Write the received message to the TcpStream for the server to receive it.
-                    write_to_buf_with_len(&mut tcp_stream, &buf).await.unwrap();
+                    send_rtt_measurement(uuid, &mut tcp_stream).await;
                 }
             }
         }
     });
+}
+
+pub async fn send_rtt_measurement(uuid: Uuid, tcp_stream: &mut TcpStream) {
+    let sendable_message = RemoteClientRequest {
+        uuid,
+        request: crate::networking::ClientRequest::RTTMeasurement(Local::now().to_utc()),
+    };
+
+    // Serialize the message
+    let buf = rmp_serde::to_vec(&sendable_message).unwrap();
+
+    // Write the received message to the TcpStream for the server to receive it.
+    write_to_buf_with_len(tcp_stream, &buf).await.unwrap();
 }
 
 async fn exchange_metadata(
