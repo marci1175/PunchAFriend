@@ -224,8 +224,6 @@ impl MapNameDiscriminants {
         match self {
             MapNameDiscriminants::FlatGround => MapInstance::map_flatground(),
             MapNameDiscriminants::Islands => MapInstance::map_islands(),
-
-            _ => unimplemented!(),
         }
     }
 }

@@ -202,6 +202,8 @@ pub fn check_for_collision_with_attack_object(
                         .iter_mut()
                         .find(|(ent, _, _, _, _)| *ent == attack_object.attack_by);
 
+                    let mut attacker_strength = 0.0;
+
                     // Increment the local player's combo counter and reset its timer
                     if let Some((_, mut local_player, _, _, _)) = attacker_result {
                         if let Some(combo_counter) = &mut local_player.combo_stats {
@@ -210,13 +212,17 @@ pub fn check_for_collision_with_attack_object(
                         } else {
                             local_player.combo_stats = Some(Combo::new(Duration::from_secs(2)));
                         }
+                        
+                        let pawn_attribute = local_player.pawn_type.into_pawn_attribute();
+
+                        attacker_strength = pawn_attribute.attack_knockback;
 
                         attacker_uuid = Some(local_player.uuid)
                     }
 
                     colliding_entity_commands.insert(Velocity {
                         linvel: vec2(
-                            foreign_char_velocity.linvel.x + 180. * push_left,
+                            foreign_char_velocity.linvel.x + 400. * push_left * attacker_strength,
                             foreign_char_velocity.linvel.y
                                 + if attack_object.attack_type
                                     == AttackType::Directional(Direction::Up)

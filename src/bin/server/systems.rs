@@ -526,7 +526,8 @@ pub fn frame(
         }
 
         if let Some(server_instance) = &mut app_ctx.server_instance {
-            // If there is a tcp_listener try receiving the messages sent by the sender thread
+                                        let connected_clients_clone = server_instance.connected_client_tcp_handles.clone();
+                                        // If there is a tcp_listener try receiving the messages sent by the sender thread
             if let Some(tcp_receiver) = &mut server_instance.client_tcp_receiver {
                 // Try receiving the message
                 if let Ok((message, socket_addr)) = tcp_receiver.try_recv() {
@@ -551,6 +552,10 @@ pub fn frame(
 
                                         // Increment total round count, to check if all the clients have voted
                                         app_ctx.intermission_total_votes += 1;
+                                        
+                                        runtime.spawn_background_task(async move |_ctx| {
+                                            send_request_to_all_clients(RemoteServerRequest { request: ServerRequest::PlayerVote((message.uuid.clone(), voted_map_name_discriminant)) }, connected_clients_clone).await;
+                                        });
                                     }
                                 }
                                 punchafriend::networking::ServerGameState::OngoingGame(

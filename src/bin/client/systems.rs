@@ -26,7 +26,7 @@ use egui_toast::{Toast, ToastOptions};
 
 use miniz_oxide::deflate::CompressionLevel;
 use punchafriend::{
-    client::ApplicationCtx,
+    client::{ApplicationCtx, UiState},
     game::{
         collision::CollisionGroupSet,
         map::{load_map_from_mapinstance, MapElement},
@@ -175,105 +175,112 @@ pub fn handle_server_output(
         if let Ok(remote_request) = client_connection.remote_receiver.try_recv() {
             match remote_request.request {
                 punchafriend::networking::ServerRequest::PlayerDisconnect(uuid) => {
-                    // Find the Entity with the designated uuid
-                    for (entity, player, _, _, _, _, _, _) in pawns.iter() {
-                        // Check for the correct uuid
-                        if player.uuid == uuid {
-                            // Despawn the entity
-                            commands.entity(entity).despawn();
+                                // Find the Entity with the designated uuid
+                                for (entity, player, _, _, _, _, _, _) in pawns.iter() {
+                                    // Check for the correct uuid
+                                    if player.uuid == uuid {
+                                        // Despawn the entity
+                                        commands.entity(entity).despawn();
 
-                            // Break out from the loop
-                            break;
-                        }
-                    }
-                }
+                                        // Break out from the loop
+                                        break;
+                                    }
+                                }
+                            }
                 punchafriend::networking::ServerRequest::PlayersStatisticsChange(
-                    updated_stat_entries,
-                ) => {
-                    let mut client_stats = client_connection.connected_clients_stats.write();
+                                updated_stat_entries,
+                            ) => {
+                                let mut client_stats = client_connection.connected_clients_stats.write();
 
-                    for updated_stat_entry in updated_stat_entries {
-                        if let Some(log_entry) = client_stats
-                            .iter()
-                            .find(|stat| stat.uuid == updated_stat_entry.uuid)
-                            .cloned()
-                        {
-                            client_stats.remove(&log_entry.clone());
+                                for updated_stat_entry in updated_stat_entries {
+                                    if let Some(log_entry) = client_stats
+                                        .iter()
+                                        .find(|stat| stat.uuid == updated_stat_entry.uuid)
+                                        .cloned()
+                                    {
+                                        client_stats.remove(&log_entry.clone());
 
-                            client_stats.insert(updated_stat_entry);
-                        } else {
-                            client_stats.insert(updated_stat_entry);
-                        }
-                    }
-                }
+                                        client_stats.insert(updated_stat_entry);
+                                    } else {
+                                        client_stats.insert(updated_stat_entry);
+                                    }
+                                }
+                            }
                 punchafriend::networking::ServerRequest::ServerGameStateControl(
-                    game_state_control,
-                ) => match game_state_control {
-                    punchafriend::networking::ServerGameState::Pause => {
-                        unimplemented!()
-                    }
-                    punchafriend::networking::ServerGameState::Intermission(intermission_data) => {
-                        // Set the application's state
-                        app_ctx.ui_layer = UiLayer::Intermission(intermission_data);
+                                game_state_control,
+                            ) => match game_state_control {
+                                punchafriend::networking::ServerGameState::Pause => {
+                                    unimplemented!()
+                                }
+                                punchafriend::networking::ServerGameState::Intermission(intermission_data) => {
+                                    // Set the application's state
+                                    app_ctx.ui_layer = UiLayer::Intermission(intermission_data);
 
-                        // Make the user able to vote again
-                        app_ctx.has_voted = false;
-                    }
-                    punchafriend::networking::ServerGameState::OngoingGame(ongoing_game_data) => {
-                        // Setup map for client-side from a mapinstance
-                        load_map_from_mapinstance(
-                            ongoing_game_data.current_map.clone(),
-                            &mut commands,
-                            collision_groups.clone(),
-                            current_game_objects,
-                        );
+                                    // Make the user able to vote again
+                                    app_ctx.has_voted = false;
+                                }
+                                punchafriend::networking::ServerGameState::OngoingGame(ongoing_game_data) => {
+                                    // Setup map for client-side from a mapinstance
+                                    load_map_from_mapinstance(
+                                        ongoing_game_data.current_map.clone(),
+                                        &mut commands,
+                                        collision_groups.clone(),
+                                        current_game_objects,
+                                    );
 
-                        // Set the application's state
-                        app_ctx.ui_layer = UiLayer::Game(ongoing_game_data);
+                                    // Set the application's state
+                                    app_ctx.ui_layer = UiLayer::Game(ongoing_game_data);
+                                }
+                            },
+                punchafriend::networking::ServerRequest::RTTMeasurement(_) => {
+                                unreachable!("The RTT measurement should be evaluated by the TCP messsage receiver thread.")
+                            }
+                punchafriend::networking::ServerRequest::ClientPawnSync(pawn_updates) => {
+                                // Iterate over all of the players
+                                for (entity, _, _, _, _, _, _, _) in pawns.iter() {
+                                    // Despawn all of the existing players, to clear out players left from a different match
+                                    commands.entity(entity).despawn();
+                                }
+
+                                let animation_state = AnimationState::new(
+                                    Timer::new(
+                                        Duration::from_secs_f32(0.1),
+                                        bevy::time::TimerMode::Repeating,
+                                    ),
+                                    1,
+                                    0,
+                                );
+
+                                for pawn_update in pawn_updates {
+                                    spawn_pawn(
+                                        &mut commands,
+                                        &collision_groups,
+                                        &asset_server,
+                                        &layout,
+                                        &pawn_update,
+                                        animation_state.clone(),
+                                        0,
+                                    );
+                                }
+                            }
+                punchafriend::networking::ServerRequest::PawnTypeChange((
+                                modified_pawn_uuid,
+                                desired_pawn_type,
+                            )) => {
+                                if let Some((_, mut pawn, ..)) = pawns
+                                    .iter_mut()
+                                    .find(|(_, pawn, ..)| pawn.uuid == modified_pawn_uuid)
+                                {
+                                    pawn.pawn_type = desired_pawn_type;
+                                }
+                            }
+                punchafriend::networking::ServerRequest::PlayerVote((voted_player, voted_map)) => {
+                    if let UiLayer::Intermission(intermission_data) = &mut app_ctx.ui_layer {
+                        if let Some((map, vote_count)) = intermission_data.selectable_maps.iter_mut().find(|(map, _)| {*map == voted_map}) {
+                            *vote_count += 1;
+                        }
                     }
                 },
-                punchafriend::networking::ServerRequest::RTTMeasurement(_) => {
-                    unreachable!("The RTT measurement should be evaluated by the TCP messsage receiver thread.")
-                }
-                punchafriend::networking::ServerRequest::ClientPawnSync(pawn_updates) => {
-                    // Iterate over all of the players
-                    for (entity, _, _, _, _, _, _, _) in pawns.iter() {
-                        // Despawn all of the existing players, to clear out players left from a different match
-                        commands.entity(entity).despawn();
-                    }
-
-                    let animation_state = AnimationState::new(
-                        Timer::new(
-                            Duration::from_secs_f32(0.1),
-                            bevy::time::TimerMode::Repeating,
-                        ),
-                        1,
-                        0,
-                    );
-
-                    for pawn_update in pawn_updates {
-                        spawn_pawn(
-                            &mut commands,
-                            &collision_groups,
-                            &asset_server,
-                            &layout,
-                            &pawn_update,
-                            animation_state.clone(),
-                            0,
-                        );
-                    }
-                }
-                punchafriend::networking::ServerRequest::PawnTypeChange((
-                    modified_pawn_uuid,
-                    desired_pawn_type,
-                )) => {
-                    if let Some((_, mut pawn, ..)) = pawns
-                        .iter_mut()
-                        .find(|(_, pawn, ..)| pawn.uuid == modified_pawn_uuid)
-                    {
-                        pawn.pawn_type = desired_pawn_type;
-                    }
-                }
             }
         }
     } else {
@@ -304,10 +311,6 @@ pub fn handle_server_output(
                 }
             }
         }
-    }
-
-    for (_, pawn, ..) in pawns.iter() {
-        // dbg!(pawn.pawn_type);
     }
 }
 

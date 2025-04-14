@@ -248,7 +248,7 @@ impl PawnType {
                 speed: 0.8,
                 jump_height: 0.8,
                 attack_speed: 0.6,
-                attack_knockback: 1.8,
+                attack_knockback: 2.,
             },
             PawnType::Ninja => PawnAttribute {
                 speed: 1.7,

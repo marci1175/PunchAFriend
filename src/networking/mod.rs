@@ -64,6 +64,8 @@ pub enum ServerRequest {
     ClientPawnSync(Vec<PawnUpdate>),
 
     PawnTypeChange((Uuid, PawnType)),
+
+    PlayerVote((Uuid, MapNameDiscriminants))
 }
 
 /// The types of GameStates which a server can request a client to enter.
